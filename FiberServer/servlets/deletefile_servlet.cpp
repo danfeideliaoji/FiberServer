@@ -40,7 +40,11 @@ int32_t DeleteFileServlet::handle(http::HttpRequest::ptr request
 #else
         MySQL::ptr mysql = MySQLMgr::GetInstance()->get("file_info");
 #endif
+#ifdef FIBERSERVER_USE_SOCI
+        SociDB::ptr shared_db = SociMgr::GetInstance()->get("file_shared");
+#else
         MySQL::ptr shared_db = MySQLMgr::GetInstance()->get("file_shared");
+#endif
         if(!mysql || !shared_db){
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"mysql connection error\"}", OtherError));
             return -1;

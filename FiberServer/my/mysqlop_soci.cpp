@@ -90,6 +90,66 @@ std::shared_ptr<UserInfo> GetUserByUsername(SociDB::ptr db, const std::string& u
 
 namespace file_info {
 
+bool ExistsByMd5(SociDB::ptr db, const std::string& md5) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        auto& sql = db->session();
+        int id = 0;
+        sql << "SELECT id FROM file_info WHERE md5 = :md5 LIMIT 1",
+               soci::use(md5, "md5"),
+               soci::into(id);
+        return sql.got_data();
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI ExistsByMd5 error: " << e.what();
+        return false;
+    }
+}
+
+bool ExistsByMd5AndUser(SociDB::ptr db, const std::string& md5, const std::string& user) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        auto& sql = db->session();
+        int id = 0;
+        sql << "SELECT id FROM file_info WHERE md5 = :md5 AND url = :user LIMIT 1",
+               soci::use(md5, "md5"),
+               soci::use(user, "user"),
+               soci::into(id);
+        return sql.got_data();
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI ExistsByMd5AndUser error: " << e.what();
+        return false;
+    }
+}
+
+bool CreateFile(SociDB::ptr db, const std::string& md5, const std::string& file_id,
+                const std::string& url, const std::string& filename,
+                int64_t size, const std::string& type) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        db->session() << "INSERT INTO file_info (md5, file_id, url, filename, size, type, count) "
+                         "VALUES (:md5, :file_id, :url, :filename, :size, :type, 1)",
+                         soci::use(md5, "md5"),
+                         soci::use(file_id, "file_id"),
+                         soci::use(url, "url"),
+                         soci::use(filename, "filename"),
+                         soci::use(size, "size"),
+                         soci::use(type, "type");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI CreateFile error: " << e.what();
+        return false;
+    }
+}
+
 std::shared_ptr<FileInfo> GetFileByUserAndFilename(SociDB::ptr db,
                                                    const std::string& user,
                                                    const std::string& filename) {
@@ -156,6 +216,136 @@ bool DeleteFileRecordByUserAndFilename(SociDB::ptr db,
         return true;
     } catch (const std::exception& e) {
         FIBER_LOG_ERROR(g_logger) << "SOCI DeleteFileRecordByUserAndFilename error: " << e.what();
+        return false;
+    }
+}
+
+bool IncrementCount(SociDB::ptr db, const std::string& md5) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        db->session() << "UPDATE file_info SET count = count + 1 WHERE md5 = :md5",
+                         soci::use(md5, "md5");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI IncrementCount error: " << e.what();
+        return false;
+    }
+}
+
+}
+
+namespace file_shared {
+
+bool ExistsByMd5(SociDB::ptr db, const std::string& md5) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        auto& sql = db->session();
+        std::string file_md5;
+        sql << "SELECT file_md5 FROM file_shared WHERE file_md5 = :md5 LIMIT 1",
+               soci::use(md5, "md5"),
+               soci::into(file_md5);
+        return sql.got_data();
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI shared ExistsByMd5 error: " << e.what();
+        return false;
+    }
+}
+
+std::string GetFileIdByMd5(SociDB::ptr db, const std::string& md5) {
+    if (!db) {
+        return "";
+    }
+
+    try {
+        auto& sql = db->session();
+        std::string file_id;
+        sql << "SELECT file_id FROM file_shared WHERE file_md5 = :md5",
+               soci::use(md5, "md5"),
+               soci::into(file_id);
+        if (!sql.got_data()) {
+            return "";
+        }
+        return file_id;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetFileIdByMd5 error: " << e.what();
+        return "";
+    }
+}
+
+bool CreateShared(SociDB::ptr db, const std::string& md5,
+                  const std::string& file_id, int64_t file_size) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        db->session() << "INSERT INTO file_shared (file_md5, file_id, file_size, ref_count) "
+                         "VALUES (:md5, :file_id, :file_size, 1)",
+                         soci::use(md5, "md5"),
+                         soci::use(file_id, "file_id"),
+                         soci::use(file_size, "file_size");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI CreateShared error: " << e.what();
+        return false;
+    }
+}
+
+bool IncrementRef(SociDB::ptr db, const std::string& md5) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        db->session() << "UPDATE file_shared SET ref_count = ref_count + 1 WHERE file_md5 = :md5",
+                         soci::use(md5, "md5");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI IncrementRef error: " << e.what();
+        return false;
+    }
+}
+
+int DecrementRef(SociDB::ptr db, const std::string& md5) {
+    if (!db) {
+        return -1;
+    }
+
+    try {
+        auto& sql = db->session();
+        sql << "UPDATE file_shared SET ref_count = ref_count - 1 WHERE file_md5 = :md5 AND ref_count > 0",
+               soci::use(md5, "md5");
+        int ref_count = -1;
+        sql << "SELECT ref_count FROM file_shared WHERE file_md5 = :md5",
+               soci::use(md5, "md5"),
+               soci::into(ref_count);
+        if (!sql.got_data()) {
+            return -1;
+        }
+        return ref_count;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI DecrementRef error: " << e.what();
+        return -1;
+    }
+}
+
+bool DeleteShared(SociDB::ptr db, const std::string& md5) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        db->session() << "DELETE FROM file_shared WHERE file_md5 = :md5",
+                         soci::use(md5, "md5");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI DeleteShared error: " << e.what();
         return false;
     }
 }

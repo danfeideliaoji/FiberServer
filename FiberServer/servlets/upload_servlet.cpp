@@ -37,8 +37,13 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"username, md5, size required\"}", OtherError));
             return -1;
         }
+#ifdef FIBERSERVER_USE_SOCI
+        SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
+        SociDB::ptr shared_db = SociMgr::GetInstance()->get("file_shared");
+#else
         MySQL::ptr mysql = MySQLMgr::GetInstance()->get("file_info");
         MySQL::ptr shared_db = MySQLMgr::GetInstance()->get("file_shared");
+#endif
         if(!mysql || !shared_db){
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"mysql connection error\"}", OtherError));
             return -1;

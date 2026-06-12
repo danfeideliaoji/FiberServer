@@ -42,7 +42,11 @@ int32_t Md5Servlet::handle(http::HttpRequest::ptr request
         
         FIBER_LOG_INFO(g_logger) << "md5 check: user=" << username << ", md5=" << md5 << ", filename=" << filename;
         
+#ifdef FIBERSERVER_USE_SOCI
+        SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
+#else
         MySQL::ptr mysql = MySQLMgr::GetInstance()->get("file_info");
+#endif
         if (!mysql) {
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"mysql connection error\"}", OtherError));
             return -1;
