@@ -30,7 +30,11 @@ int32_t DownloadServlet::handle(http::HttpRequest::ptr request
     auto query = parseQuery(s);
     std::string& user=query["user"];
     std::string& filename=query["filename"]; 
+#ifdef FIBERSERVER_USE_SOCI
+    SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
+#else
     MySQL::ptr mysql = MySQLMgr::GetInstance()->get("file_info");
+#endif
     if (!mysql) {
         response->setStatus(HttpStatus::INTERNAL_SERVER_ERROR);
         response->setBody("{\"code\":1,\"msg\":\"db error\"}");

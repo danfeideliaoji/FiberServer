@@ -34,7 +34,11 @@ int32_t MyFilesServlet::handle(http::HttpRequest::ptr request,
             return 0;
         }
 
+#ifdef FIBERSERVER_USE_SOCI
+        SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
+#else
         MySQL::ptr mysql = MySQLMgr::GetInstance()->get("file_info");
+#endif
         if (!mysql) {
             FIBER_LOG_ERROR(g_logger) << "mysql connection error";
             response->setBody("{\"code\":1,\"msg\":\"mysql connection error\"}");

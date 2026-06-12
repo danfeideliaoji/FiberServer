@@ -37,7 +37,7 @@ static bool FileInfoFromResult(ISQLData::ptr res, std::shared_ptr<FileInfo>& inf
     info->type = res->getString(6);
     info->count = res->getInt32(7);
     info->create_time = res->getTime(8);
-    // info->update_time = res->getTime(9);
+    info->update_time = res->getTime(9);
     return true;
 }
 
@@ -326,7 +326,7 @@ std::shared_ptr<FileInfo> GetFileById(MySQL::ptr db, const std::string& file_id)
         return nullptr;
     }
     auto stmt = MySQLStmt::Create(db,
-        "SELECT id, md5, file_id, url, size, type, count, create_time, update_time FROM file_info WHERE file_id = ?");
+        "SELECT id, md5, file_id, url, filename, size, type, count, create_time, update_time FROM file_info WHERE file_id = ?");
     if (!stmt) {
         return nullptr;
     }
@@ -487,7 +487,7 @@ std::vector<std::shared_ptr<FileInfo>> GetFileList(MySQL::ptr db, int offset, in
         return files;
     }
     char sql[256];
-    snprintf(sql, sizeof(sql), "SELECT id, md5, file_id, url, size, type, count, create_time, update_time FROM file_info ORDER BY id DESC LIMIT %d OFFSET %d", limit, offset);
+    snprintf(sql, sizeof(sql), "SELECT id, md5, file_id, url, filename, size, type, count, create_time, update_time FROM file_info ORDER BY id DESC LIMIT %d OFFSET %d", limit, offset);
     auto res = db->query(sql);
     if (!res) {
         return files;

@@ -91,12 +91,20 @@ bool DeleteFileRecordByMd5(MySQL::ptr db, const std::string& md5);
 
 bool DeleteFileRecordByUserAndFilename(MySQL::ptr db, const std::string& user, const std::string& filename);
 
+#ifdef FIBERSERVER_USE_SOCI
+bool DeleteFileRecordByUserAndFilename(SociDB::ptr db, const std::string& user, const std::string& filename);
+#endif
+
 int64_t GetTotalStorageSize(MySQL::ptr db);
 
 std::shared_ptr<FileInfo> GetFileById(MySQL::ptr db, const std::string& file_id);
 
 std::shared_ptr<FileInfo> GetFileByMd5(MySQL::ptr db, const std::string& md5);
 std::shared_ptr<FileInfo> GetFileByUserAndFilename(MySQL::ptr db, const std::string& user, const std::string& filename);
+
+#ifdef FIBERSERVER_USE_SOCI
+std::shared_ptr<FileInfo> GetFileByUserAndFilename(SociDB::ptr db, const std::string& user, const std::string& filename);
+#endif
 
 int64_t GetFileSize(MySQL::ptr db, const std::string& file_id);
 
@@ -114,6 +122,10 @@ std::vector<std::shared_ptr<FileInfo>> GetFileList(MySQL::ptr db, int offset, in
 
 // 按用户名查询文件列表（url 字段存用户名）
 std::vector<std::shared_ptr<FileInfo>> GetFileListByUser(MySQL::ptr db, const std::string& user, int offset, int limit);
+
+#ifdef FIBERSERVER_USE_SOCI
+std::vector<std::shared_ptr<FileInfo>> GetFileListByUser(SociDB::ptr db, const std::string& user, int offset, int limit);
+#endif
 
 }
 
