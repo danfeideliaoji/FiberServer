@@ -2,7 +2,9 @@
 #include "base/log.h"
 #include "base/macro.h"
 #include "hook.h"
+#ifndef FIBERSERVER_USE_SOCI
 #include "FiberServer/db/mysql.h"
+#endif
 namespace FiberServer{
     static Logger::ptr g_logger=FIBER_LOG_NAME("system");
 
@@ -398,7 +400,9 @@ void Scheduler::run() {//协程调度函数
     set_hook_enable(true); //开启当前线程hook 关键 一定要有!!!!!!!
     setThis();
     bindProcessor();
+#ifndef FIBERSERVER_USE_SOCI
     MySQLThreadIniter mysql_initer;//mysql线程初始化 关键 一定要有!!!!!!!
+#endif
     if(FiberServer::GetThreadId() != m_rootThread){//如果不是主线程的run
          //设置当前的主协程 这里不用绑定函数 因为线程一直在run 
          //主协程主要是为了保存上下文 swapin swapout

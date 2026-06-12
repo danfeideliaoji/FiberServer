@@ -64,8 +64,8 @@ set(LIB_SRCS
     FiberServer/servlets/chunkupload_servlet.cpp FiberServer/servlets/dirupload_servlet.cpp FiberServer/servlets/upload_servlet.cpp
     FiberServer/servlets/myfiles_servlet.cpp FiberServer/servlets/md5_servlet.cpp FiberServer/servlets/download_servlet.cpp
     FiberServer/servlets/deletefile_servlet.cpp
-    FiberServer/db/mysql.cpp FiberServer/util/json_util.cpp FiberServer/util/hash_util.cpp
-    FiberServer/my/mysqlop.cpp FiberServer/my/chunkManager.cpp FiberServer/my/fastdfs.cpp
+    FiberServer/util/json_util.cpp FiberServer/util/hash_util.cpp
+    FiberServer/my/chunkManager.cpp FiberServer/my/fastdfs.cpp
     FiberServer/my/application.cpp
 )
 
@@ -73,6 +73,11 @@ if(USE_SOCI_DB)
     list(APPEND LIB_SRCS
         FiberServer/db/soci_db.cpp
         FiberServer/my/mysqlop_soci.cpp
+    )
+else()
+    list(APPEND LIB_SRCS
+        FiberServer/db/mysql.cpp
+        FiberServer/my/mysqlop.cpp
     )
 endif()
 

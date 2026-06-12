@@ -9,7 +9,6 @@
 #include "FiberServer/iomanager.h"
 #include "FiberServer/net/address.h"
 #include "FiberServer/net/http/http_server.h"
-#include "FiberServer/db/mysql.h"
 #include "chunkManager.h"
 namespace FiberServer {
 

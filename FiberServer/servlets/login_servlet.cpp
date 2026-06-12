@@ -1,7 +1,6 @@
 #include "login_servlet.h"
 #include "FiberServer/base/log.h"
 #include "FiberServer/base/util.h"
-#include "FiberServer/db/mysql.h"
 #include "FiberServer/my/mysqlop.h"
 #include "FiberServer/util/hash_util.h"
 #include <json/value.h>
