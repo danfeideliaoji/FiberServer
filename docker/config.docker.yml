@@ -1,0 +1,58 @@
+# FiberServer Docker/WSL2 development config.
+
+fiber:
+  stack_size: 131072
+
+tcp:
+  connect:
+    timeout: 5000
+
+tcp_server:
+  read_timeout: 120000
+
+server:
+  worker_threads: 5
+
+http:
+  request:
+    max_body_size: 67108864
+    buffer_size: 4096
+  response:
+    max_body_size: 67108864
+    buffer_size: 4096
+
+mysql:
+  dbs:
+    user_info:
+      host: mysql
+      port: 3306
+      user: "root"
+      passwd: "fiberserver"
+      dbname: "FiberServer"
+      connection: 10
+      type: mysql
+    file_info:
+      host: mysql
+      port: 3306
+      user: "root"
+      passwd: "fiberserver"
+      dbname: "FiberServer"
+      connection: 10
+      type: mysql
+    file_shared:
+      host: mysql
+      port: 3306
+      user: "root"
+      passwd: "fiberserver"
+      dbname: "FiberServer"
+      connection: 10
+      type: mysql
+
+uploadfiles:
+  chunk_sizes: 5242880
+  tmp_path: "/var/data/tmp_uploads"
+  clean_time: 3600
+  last_time: 7200
+
+fastdfs:
+  conf_path: "/etc/fdfs/client.conf"

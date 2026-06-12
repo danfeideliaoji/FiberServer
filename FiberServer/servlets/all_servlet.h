@@ -1,0 +1,13 @@
+#pragma once
+#include "FiberServer/net/http/servlet.h"
+#include "FiberServer/servlets/config_servlet.h"
+#include "FiberServer/servlets/status_servlet.h"
+#include "FiberServer/servlets/login_servlet.h"
+#include "FiberServer/servlets/register_servlet.h"
+#include "FiberServer/servlets/upload_servlet.h"
+#include "FiberServer/servlets/dirupload_servlet.h"
+#include "FiberServer/servlets/chunkupload_servlet.h"
+#include "FiberServer/servlets/myfiles_servlet.h"
+#include "FiberServer/servlets/md5_servlet.h"
+#include "FiberServer/servlets/download_servlet.h"
+#include "FiberServer/servlets/deletefile_servlet.h"

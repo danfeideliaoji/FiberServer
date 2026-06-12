@@ -1,0 +1,12 @@
+.git
+.cache
+.vscode
+build
+build-*
+build-codex
+*.o
+*.a
+*.so
+log.txt
+logs
+tmp

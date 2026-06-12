@@ -1,0 +1,10 @@
+build/
+build-codex/
+build_test/
+.cache/
+.vscode/
+downloads/
+log.txt
+*.o
+*.so
+*.a

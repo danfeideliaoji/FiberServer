@@ -1,0 +1,51 @@
+FROM ubuntu:22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG LIBFASTCOMMON_REF=master
+ARG LIBSERVERFRAME_REF=master
+ARG FASTDFS_REF=master
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    cmake \
+    curl \
+    git \
+    make \
+    pkg-config \
+    python3 \
+    libboost-all-dev \
+    libevent-dev \
+    libjsoncpp-dev \
+    libssl-dev \
+    libyaml-cpp-dev \
+    default-libmysqlclient-dev \
+    zlib1g-dev \
+    libzstd-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp/deps
+
+RUN git clone --depth 1 --branch ${LIBFASTCOMMON_REF} https://github.com/happyfish100/libfastcommon.git \
+    && cd libfastcommon \
+    && ./make.sh \
+    && ./make.sh install
+
+RUN git clone --depth 1 --branch ${LIBSERVERFRAME_REF} https://github.com/happyfish100/libserverframe.git \
+    && cd libserverframe \
+    && ./make.sh \
+    && ./make.sh install
+
+RUN git clone --depth 1 --branch ${FASTDFS_REF} https://github.com/happyfish100/fastdfs.git \
+    && cd fastdfs \
+    && ./make.sh \
+    && ./make.sh install
+
+RUN ldconfig \
+    && mkdir -p /workspace /var/data/tmp_uploads /etc/fdfs
+
+WORKDIR /workspace
+
+ENV FIBER_CONFIG=/workspace/docker/config.docker.yml
+
+CMD ["bash"]
