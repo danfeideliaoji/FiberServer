@@ -35,15 +35,24 @@ public:
 
     bool deleteFile(const std::string& file_id);
     bool deleteFileByMd5(MySQL::ptr db, const std::string& md5);
+#ifdef FIBERSERVER_USE_SOCI
+    bool deleteFileByMd5(SociDB::ptr db, const std::string& md5);
+#endif
 
     std::string downloadFile(const std::string& file_id);
     bool downloadFileToPath(const std::string& file_id, const std::string& local_path);
 
     int64_t getFileSize(const std::string& file_id);
     int64_t getFileSizeByMd5(MySQL::ptr db, const std::string& md5);
+#ifdef FIBERSERVER_USE_SOCI
+    int64_t getFileSizeByMd5(SociDB::ptr db, const std::string& md5);
+#endif
 
     std::string getFileUrl(const std::string& file_id);
     std::string getFileUrlByMd5(MySQL::ptr db, const std::string& md5);
+#ifdef FIBERSERVER_USE_SOCI
+    std::string getFileUrlByMd5(SociDB::ptr db, const std::string& md5);
+#endif
 
 private:
     bool queryStorageServer();
@@ -76,11 +85,20 @@ public:
     static bool uploadSmallFile(const std::string& content, std::string& file_id);
     static bool deleteFile(const std::string& file_id);
     static bool deleteFileByMd5(MySQL::ptr db, const std::string& md5);
+#ifdef FIBERSERVER_USE_SOCI
+    static bool deleteFileByMd5(SociDB::ptr db, const std::string& md5);
+#endif
     static std::string downloadFile(const std::string& file_id);
     static bool downloadFileToPath(const std::string& file_id, const std::string& local_path);
     static int64_t getFileSize(const std::string& file_id);
     static int64_t getFileSizeByMd5(MySQL::ptr db, const std::string& md5);
+#ifdef FIBERSERVER_USE_SOCI
+    static int64_t getFileSizeByMd5(SociDB::ptr db, const std::string& md5);
+#endif
     static std::string getFileUrl(const std::string& file_id);
     static std::string getFileUrlByMd5(MySQL::ptr db, const std::string& md5);
+#ifdef FIBERSERVER_USE_SOCI
+    static std::string getFileUrlByMd5(SociDB::ptr db, const std::string& md5);
+#endif
 };
 }

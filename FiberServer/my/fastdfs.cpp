@@ -93,6 +93,17 @@ bool FastDFS::deleteFileByMd5(MySQL::ptr db, const std::string& md5){
     return deleteFile(file_info->file_id);
 }
 
+#ifdef FIBERSERVER_USE_SOCI
+bool FastDFS::deleteFileByMd5(SociDB::ptr db, const std::string& md5){
+    auto file_info = file_info::GetFileByMd5(db, md5);
+    if(!file_info){
+        FIBER_LOG_WARN(g_logger) << "file not found, md5=" << md5;
+        return false;
+    }
+    return deleteFile(file_info->file_id);
+}
+#endif
+
 std::string FastDFS::downloadFile(const std::string& file_id){
     char *file_buff = nullptr;
     int64_t file_size = 0;
@@ -136,13 +147,26 @@ int64_t FastDFS::getFileSizeByMd5(MySQL::ptr db, const std::string& md5){
     return file_info::GetFileSizeByMd5(db, md5);
 }
 
+#ifdef FIBERSERVER_USE_SOCI
+int64_t FastDFS::getFileSizeByMd5(SociDB::ptr db, const std::string& md5){
+    return file_info::GetFileSizeByMd5(db, md5);
+}
+#endif
+
 std::string FastDFS::getFileUrl(const std::string& file_id){
-    return file_info::GetFileUrl(nullptr, file_id);
+    (void)file_id;
+    return "";
 }
 
 std::string FastDFS::getFileUrlByMd5(MySQL::ptr db, const std::string& md5){
     return file_info::GetFileUrlByMd5(db, md5);
 }
+
+#ifdef FIBERSERVER_USE_SOCI
+std::string FastDFS::getFileUrlByMd5(SociDB::ptr db, const std::string& md5){
+    return file_info::GetFileUrlByMd5(db, md5);
+}
+#endif
 
 FastDFSManager::FastDFSManager(){
     m_maxConn=10;
@@ -212,6 +236,11 @@ bool FastDFSUtil::deleteFile(const std::string& file_id){
 bool FastDFSUtil::deleteFileByMd5(MySQL::ptr db, const std::string& md5){
     return FastDFSMgr::GetInstance()->get()->deleteFileByMd5(db, md5);
 }
+#ifdef FIBERSERVER_USE_SOCI
+bool FastDFSUtil::deleteFileByMd5(SociDB::ptr db, const std::string& md5){
+    return FastDFSMgr::GetInstance()->get()->deleteFileByMd5(db, md5);
+}
+#endif
 std::string FastDFSUtil::downloadFile(const std::string& file_id){
     return FastDFSMgr::GetInstance()->get()->downloadFile(file_id);
 }
@@ -224,10 +253,20 @@ int64_t FastDFSUtil::getFileSize(const std::string& file_id){
 int64_t FastDFSUtil::getFileSizeByMd5(MySQL::ptr db, const std::string& md5){
     return FastDFSMgr::GetInstance()->get()->getFileSizeByMd5(db, md5);
 }
+#ifdef FIBERSERVER_USE_SOCI
+int64_t FastDFSUtil::getFileSizeByMd5(SociDB::ptr db, const std::string& md5){
+    return FastDFSMgr::GetInstance()->get()->getFileSizeByMd5(db, md5);
+}
+#endif
 std::string FastDFSUtil::getFileUrl(const std::string& file_id){
     return FastDFSMgr::GetInstance()->get()->getFileUrl(file_id);
 }
 std::string     FastDFSUtil::getFileUrlByMd5(MySQL::ptr db, const std::string& md5){
     return FastDFSMgr::GetInstance()->get()->getFileUrlByMd5(db, md5);
 }
+#ifdef FIBERSERVER_USE_SOCI
+std::string     FastDFSUtil::getFileUrlByMd5(SociDB::ptr db, const std::string& md5){
+    return FastDFSMgr::GetInstance()->get()->getFileUrlByMd5(db, md5);
+}
+#endif
 }
