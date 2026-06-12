@@ -10,6 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # 定义一个开关，
 option(ENABLE_ASAN "Enable AddressSanitizer" off)
+option(USE_SOCI_DB "Use SOCI database backend" off)
 
 if(ENABLE_ASAN)
     message(STATUS "AddressSanitizer enabled")
@@ -28,6 +29,10 @@ find_package(Boost REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(jsoncpp CONFIG REQUIRED)
+
+if(USE_SOCI_DB)
+    find_package(SOCI CONFIG REQUIRED)
+endif()
 
 if(NOT TARGET yaml-cpp::yaml-cpp AND TARGET yaml-cpp)
     add_library(yaml-cpp::yaml-cpp ALIAS yaml-cpp)
@@ -55,9 +60,20 @@ set(LIB_SRCS
     FiberServer/my/application.cpp
 )
 
+if(USE_SOCI_DB)
+    list(APPEND LIB_SRCS
+        FiberServer/db/soci_db.cpp
+        FiberServer/my/mysqlop_soci.cpp
+    )
+endif()
+
 # --- 4. 目标配置 ---
 add_library(fiberserver SHARED ${LIB_SRCS})
 target_include_directories(fiberserver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+if(USE_SOCI_DB)
+    target_compile_definitions(fiberserver PUBLIC FIBERSERVER_USE_SOCI)
+endif()
 
 
 
@@ -76,6 +92,27 @@ target_link_libraries(fiberserver
 )
 
 # --- 7. 可执行文件 ---
+if(USE_SOCI_DB)
+    set(SOCI_LINK_TARGETS)
+    if(TARGET SOCI::soci_core)
+        list(APPEND SOCI_LINK_TARGETS SOCI::soci_core)
+    elseif(TARGET SOCI::core)
+        list(APPEND SOCI_LINK_TARGETS SOCI::core)
+    else()
+        list(APPEND SOCI_LINK_TARGETS soci_core)
+    endif()
+
+    if(TARGET SOCI::soci_mysql)
+        list(APPEND SOCI_LINK_TARGETS SOCI::soci_mysql)
+    elseif(TARGET SOCI::mysql)
+        list(APPEND SOCI_LINK_TARGETS SOCI::mysql)
+    else()
+        list(APPEND SOCI_LINK_TARGETS soci_mysql)
+    endif()
+
+    target_link_libraries(fiberserver PUBLIC ${SOCI_LINK_TARGETS})
+endif()
+
 add_executable(test FiberServer/tests/test.cpp) 
 target_link_libraries(test fiberserver)
 

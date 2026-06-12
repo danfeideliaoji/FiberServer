@@ -49,7 +49,11 @@ int32_t LoginServlet::handle(http::HttpRequest::ptr request
             return -1;
         }
 
+#ifdef FIBERSERVER_USE_SOCI
+        SociDB::ptr mysql = SociMgr::GetInstance()->get("user_info");
+#else
         MySQL::ptr mysql = MySQLMgr::GetInstance()->get("user_info");
+#endif
         if (!mysql) {
             FIBER_LOG_ERROR(g_logger) << "mysql connection error";
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"mysql connection error\"}", OtherError));

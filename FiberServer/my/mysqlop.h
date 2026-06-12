@@ -1,5 +1,8 @@
 #pragma once
 #include "FiberServer/db/mysql.h"
+#ifdef FIBERSERVER_USE_SOCI
+#include "FiberServer/db/soci_db.h"
+#endif
 #include <string>
 #include <vector>
 
@@ -36,9 +39,19 @@ bool CreateUser(MySQL::ptr db, const std::string& username,
                 const std::string& password, const std::string& salt,
                 const std::string& nickname, int64_t& out_id);
 
+#ifdef FIBERSERVER_USE_SOCI
+bool CreateUser(SociDB::ptr db, const std::string& username,
+                const std::string& password, const std::string& salt,
+                const std::string& nickname, int64_t& out_id);
+#endif
+
 std::shared_ptr<UserInfo> GetUserById(MySQL::ptr db, int64_t id);
 
 std::shared_ptr<UserInfo> GetUserByUsername(MySQL::ptr db, const std::string& username);
+
+#ifdef FIBERSERVER_USE_SOCI
+std::shared_ptr<UserInfo> GetUserByUsername(SociDB::ptr db, const std::string& username);
+#endif
 
 bool UpdatePassword(MySQL::ptr db, int64_t user_id,
                     const std::string& password, const std::string& salt);

@@ -54,7 +54,11 @@ int32_t RegisterServlet::handle(http::HttpRequest::ptr request,
             return 0;
         }
 
+#ifdef FIBERSERVER_USE_SOCI
+        SociDB::ptr mysql = SociMgr::GetInstance()->get("user_info");
+#else
         MySQL::ptr mysql = MySQLMgr::GetInstance()->get("user_info");
+#endif
         if (!mysql) {
             FIBER_LOG_ERROR(g_logger) << "mysql connection error";
             response->setBody(StringUtil::Format(
