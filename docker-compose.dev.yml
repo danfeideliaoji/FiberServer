@@ -8,6 +8,7 @@ services:
     environment:
       FIBER_CONFIG: /workspace/docker/config.docker.yml
       FIBER_WORKER_THREADS: ${FIBER_WORKER_THREADS:-5}
+      USE_SOCI_DB: ${USE_SOCI_DB:-OFF}
     volumes:
       - .:/workspace
       - ./docker/fdfs/client.conf:/etc/fdfs/client.conf:ro
@@ -31,6 +32,7 @@ services:
     environment:
       FIBER_CONFIG: /workspace/docker/config.docker.yml
       FIBER_WORKER_THREADS: ${FIBER_WORKER_THREADS:-5}
+      USE_SOCI_DB: ${USE_SOCI_DB:-OFF}
     volumes:
       - .:/workspace
       - ./docker/fdfs/client.conf:/etc/fdfs/client.conf:ro
@@ -46,7 +48,7 @@ services:
     ports:
       - "8080:8080"
     command: >
-      bash -lc 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      bash -lc 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DUSE_SOCI_DB=${USE_SOCI_DB:-OFF}
       && cmake --build build -j"$$(nproc)"
       && FIBER_CONFIG=/workspace/docker/config.docker.yml ./build/server_main'
 

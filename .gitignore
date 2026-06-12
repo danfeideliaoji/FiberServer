@@ -1,5 +1,6 @@
 build/
 build-codex/
+build-soci/
 build_test/
 .cache/
 .vscode/

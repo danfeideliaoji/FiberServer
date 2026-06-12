@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libevent-dev \
     libjsoncpp-dev \
     libssl-dev \
+    libsoci-dev \
+    libsoci-mysql4.0 \
     libyaml-cpp-dev \
     default-libmysqlclient-dev \
     zlib1g-dev \
