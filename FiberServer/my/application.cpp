@@ -1,13 +1,17 @@
 #include "application.h"
 #include "FiberServer/base/log.h"
 #include "FiberServer/base/config.h"
+#include "FiberServer/db/db_executor.h"
 #include <cstdlib>
+#include <string>
 
 namespace FiberServer {
 
 std::atomic<bool> Application::g_running{true};
 static ConfigVar<uint64_t>::ptr g_workerThreads = Config::Lookup<uint64_t>(
     "server.worker_threads", 5, "http IOManager worker threads");
+static ConfigVar<bool>::ptr g_perfLogEnabled = Config::Lookup<bool>(
+    "perf.log_enabled", true, "enable per-request performance logs");
 
 Application::Application() {
     m_mainThreadId = std::this_thread::get_id();
@@ -18,12 +22,21 @@ Application::~Application() {
 }
 
 void Application::init() {
-    // 主线程也需要 MySQL 线程初始化！
-    // MySQLThreadIniter mysql_initer;
 
     const char* config_path = std::getenv("FIBER_CONFIG");
     Config::LoadFromConfDir(config_path && *config_path ? config_path : "./config.txt");
     FIBER_LOG_ROOT()->setLevel(LogLevel::WARN);
+    auto perf_logger = FIBER_LOG_NAME("perf");
+    bool perf_log_enabled = g_perfLogEnabled->getValue();
+    const char* perf_log_env = std::getenv("FIBER_PERF_LOG");
+    if(perf_log_env && *perf_log_env) {
+        std::string val = perf_log_env;
+        perf_log_enabled = !(val == "0" || val == "false" || val == "FALSE" || val == "off" || val == "OFF");
+    }
+    perf_logger->setLevel(perf_log_enabled ? LogLevel::INFO : LogLevel::FATAL);
+    if(perf_log_enabled) {
+        perf_logger->addAppender(LogAppender::Type::STDOUT);
+    }
     
     std::signal(SIGINT, [](int){g_running = false;});
     std::signal(SIGTERM, [](int){g_running = false;});
@@ -32,6 +45,7 @@ void Application::init() {
 
 void Application::run() {
     init();
+    DbExecutorMgr::GetInstance();
 
     uint64_t worker_threads = g_workerThreads->getValue();
     const char* worker_threads_env = std::getenv("FIBER_WORKER_THREADS");
@@ -45,9 +59,10 @@ void Application::run() {
     if(worker_threads == 0) {
         worker_threads = 1;
     }
-    m_iom = std::make_unique<IOManager>(worker_threads, true, "http");
-    m_chunkManager = std::make_unique<ChunkManager>();//添加定时器
+    m_acceptIom = std::make_unique<IOManager>(1, false, "accept");
+    m_iom = std::make_unique<IOManager>(worker_threads, false, "http");
     m_iom->schedule([this]() {
+        m_chunkManager = std::make_unique<ChunkManager>();
         auto addr = Address::LookupAny("0.0.0.0:8080");
         if (!addr) {
             FIBER_LOG_ERROR(FIBER_LOG_ROOT()) << "LookupAny address fail";
@@ -56,7 +71,8 @@ void Application::run() {
         m_server = std::make_shared<http::HttpServer>(
             true,
             IOManager::GetThis(),
-            IOManager::GetThis());
+            IOManager::GetThis(),
+            m_acceptIom.get());
         m_server->setName("fiber_http");
 
         std::vector<Address::ptr> addrs{addr};
@@ -94,7 +110,12 @@ void Application::run() {
 void Application::stop() {
     g_running = false;
     m_chunkManager.reset();
-    m_iom->stop();
+    if(m_iom) {
+        m_iom->stop();
+    }
+    if(m_acceptIom) {
+        m_acceptIom->stop();
+    }
 }
 
 void Application::signalHandler(int) {

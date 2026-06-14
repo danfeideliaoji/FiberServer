@@ -312,7 +312,7 @@ bool IOManager::stopping() {
 
 void IOManager::idle(){
     FIBER_LOG_DEBUG(g_logger)<<"idle";
-    const uint64_t MAX_EVENTS=256;
+    const uint64_t MAX_EVENTS=1024;
     epoll_event* events=new epoll_event[MAX_EVENTS];//创建多个epoll_event
     std::shared_ptr<epoll_event> shared_events(events, [](epoll_event* ptr){
         delete[] ptr;

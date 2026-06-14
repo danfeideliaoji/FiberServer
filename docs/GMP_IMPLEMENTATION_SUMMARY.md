@@ -12,7 +12,7 @@
 
 原项目已经具备一个较完整的 C++ 云存储服务雏形，核心能力包括：
 
-- 用户态协程 `Fiber`，基于 `ucontext` 保存和切换执行上下文。
+- 用户态协程 `Fiber`，基于 Boost.Context 保存和切换执行上下文。
 - 多线程协程调度器 `Scheduler`，负责在线程池中执行协程任务。
 - `IOManager`，基于 `epoll` 管理 socket 读写事件和定时器。
 - `hook` 层，拦截 `read/write/accept/connect/sleep` 等阻塞调用，把阻塞等待转成协程挂起和事件唤醒。
@@ -257,13 +257,13 @@ FIBER_WORKER_THREADS=2
 | 业务链路 | 300 / 30 | 全成功，约 787-872 QPS |
 | 业务链路 | 500 / 50 | 全成功，约 640-831 QPS |
 | 业务链路 | 800 / 80 | 全成功，约 743-854 QPS |
-| 业务链路 | 1000 / 100 | `login` 和 `download` 各 1 个超时，开始进入边缘状态 |
+| 业务链路 | 1000 / 100 | SOCI 迁移后重跑全成功，读接口约 787-901 QPS |
 
 所以当前环境下可以认为：
 
 ```text
-业务读接口稳定档位约为 80 并发，读接口吞吐约 740-850 QPS。
-100 并发开始出现偶发 15 秒级超时，不能算完全稳定档位。
+SOCI 迁移后，业务读接口在 100 并发、1000 请求样本下全成功。
+读接口吞吐约 787-901 QPS，未复现早期 login/download 的 15 秒级超时。
 ```
 
 压测后 `/api/status` 健康检查正常，调度器队列清空，没有观察到任务积压。
@@ -311,7 +311,7 @@ global_queue_size = 0
 1. 为什么默认 5 个 worker 时 `/api/status` 里第 5 个 Processor 没有执行统计。
 2. work stealing 空转较多，`steal_fail_count` 偏高，可以考虑自适应退避。
 3. 当前 HTTP 响应使用 `connection: close`，支持 keep-alive 后短请求吞吐可能明显提升。
-4. 100 并发时 `login/download` 偶发 15 秒超时，需要定位 MySQL、FastDFS、Nginx 或 hook 覆盖是否存在阻塞点。
+4. 补更长时间业务压测和更大的上传样本，确认 100 并发短样本结果能否稳定复现。
 5. 增加业务耗时指标，拆分 HTTP、DB、FastDFS、调度器等待时间。
 
 这些属于下一轮优化，不影响当前简化 GMP 版本的完整性。

@@ -1,5 +1,5 @@
 #pragma once
-#include<ucontext.h>
+#include<boost/context/fiber.hpp>
 #include<memory>
 #include<iostream>
 #include<functional>
@@ -48,11 +48,13 @@ namespace FiberServer{
         static uint64_t GetFiberId(); //获取当前协程id
     private:
         uint64_t m_id=0; //协程id
-        ucontext_t m_ctx; //协程上下文
+        boost::context::fiber m_ctx; //协程上下文
+        boost::context::fiber m_caller; //调用方上下文
         State m_state=State::INIT ; //协程状态
-        void* m_stack=nullptr;// 协程运行栈指针
         uint32_t m_stacksize=0;//协程栈大小
+        bool m_useCaller=false;
         std::function<void()> m_cb;//协程运行函数
+        void makeContext();
     };
     //重载输出fiber状态
  std::ostream& operator<<(std::ostream& os,Fiber::State state);

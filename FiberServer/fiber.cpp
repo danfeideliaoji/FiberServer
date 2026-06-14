@@ -1,5 +1,6 @@
 #include "fiber.h"
 #include<atomic>
+#include<boost/context/fixedsize_stack.hpp>
 #include "base/log.h" 
 #include "base/config.h"
 #include "base/macro.h"
@@ -19,19 +20,6 @@ namespace FiberServer{
     //atomic重载了++ -- 这些是线程安全的
     static std::atomic<uint64_t> s_fiber_id{0};//协程di 因为多线程 所以用原子变量
     static std::atomic<uint64_t> s_fiber_count{0};//协程总数
-    class MallocStackAllocator{//内存分配器
-    public:
-        static void* Alloc(size_t size){
-            return malloc(size);
-        }
-        static void Dealloc(void* ptr,size_t size){
-            //这里是为了接口统一 所有要传size
-            free(ptr);
-        }
-    };
-    using StackAllocator =MallocStackAllocator;//指定栈内存分配器 
-    //后续可以指定其他类型的
-
     uint64_t Fiber::GetFiberId(){//获得当前运行的协程id
         if(t_fiber){
             return t_fiber->getId();
@@ -41,42 +29,26 @@ namespace FiberServer{
     Fiber::Fiber(){//无参构造 是GetThis 作为当前线程的主协程
         m_state=State::EXEC;
         SetThis(this);//设置当前运行协程
-        if(getcontext(&m_ctx)){
-            FIBER_ASSERT2(false,"getcontext error");
-        }
         ++s_fiber_count;
         FIBER_LOG_DEBUG(g_logger)<<"Thread name= "<<Thread::GetName() <<" Fiber::Fiber main "<<"id= "<<m_id;
     }
     //任务协程
     Fiber::Fiber(std::function<void()>cb ,size_t stacksize,bool use_caller)//普通协程构造函数
     :m_id(++s_fiber_id),
+    m_useCaller(use_caller),
     m_cb(cb) {
         ++s_fiber_count;
         m_stacksize=stacksize ?stacksize :g_fiber_stack_size->getValue();//指定协程栈大小 如果指定0 则从配置获取
-        // FIBER_LOG_DEBUG(g_logger)<<"Fiber_stacksize= "<<m_stacksize;
-        m_stack = StackAllocator::Alloc(m_stacksize);//给栈分配内存
-        if(getcontext(&m_ctx)){
-            FIBER_ASSERT2(false,"getcontext error");
-        }
-        m_ctx.uc_link=nullptr;//指定后继上下文为空 
-        m_ctx.uc_stack.ss_sp = m_stack ; //指定栈指针
-        m_ctx.uc_stack.ss_size = m_stacksize;//指定栈大小
-        if(!use_caller){
-            makecontext(&m_ctx,&Fiber::MainFunc,0);//指定协程运行函数
-        }
-        else{
-            makecontext(&m_ctx,&Fiber::CallerMainFunc,0);//指定协程运行函数
-        }
+        makeContext();
         FIBER_LOG_DEBUG(g_logger)<<"Fiber::Fiber id="<<m_id;
     }
     Fiber::~Fiber(){
         --s_fiber_count;
-        if(m_stack){//这里用是否有栈空间区分是否为主协程(主协程没有独立的栈空间)
+        if(m_id){//这里用是否有 id 区分是否为主协程(主协程没有独立的栈空间)
             FIBER_ASSERT(m_state==State::INIT||
                 m_state==State::EXCEPT||
                 m_state==State::TERM
             );//删除协程时 必须是初始化 异常 可执行这三种状态
-            StackAllocator::Dealloc(m_stack,m_stacksize);
         }
         else{//为主协程
             FIBER_ASSERT(!m_cb);//主协程不允许有回调函数
@@ -90,20 +62,29 @@ namespace FiberServer{
         m_id<<" total="<<s_fiber_count;
     }
     void Fiber::reset(std::function<void()> cb){//重置协程函数 当前协程处于TERM/EXCEPT状态时可以重置协程函数并恢复执行
-        FIBER_ASSERT(m_stack) ;// 协程栈不能为空
+        FIBER_ASSERT(m_id) ;// 主协程不能 reset
         FIBER_ASSERT(m_state==State::TERM||
         m_state==State::EXCEPT||
         m_state==State::INIT
         );
         m_cb=cb;
-        if(getcontext(&m_ctx)){
-            FIBER_ASSERT2(false,"getcontext error");
-        }
-        m_ctx.uc_link=nullptr;//指定后继上下文为空 
-        m_ctx.uc_stack.ss_sp = m_stack ; //指定栈指针
-        m_ctx.uc_stack.ss_size = m_stacksize;//指定栈大小
-        makecontext(&m_ctx,&Fiber::MainFunc,0);
+        m_caller = boost::context::fiber();
+        makeContext();
         m_state=State::INIT;//重置后状态为初始化状态
+    }
+
+    void Fiber::makeContext(){
+        boost::context::fixedsize_stack stack_alloc(m_stacksize);
+        m_ctx = boost::context::fiber(std::allocator_arg, stack_alloc,
+            [this](boost::context::fiber&& caller) {
+                m_caller = std::move(caller);
+                if(m_useCaller){
+                    Fiber::CallerMainFunc();
+                } else {
+                    Fiber::MainFunc();
+                }
+                return std::move(m_caller);
+            });
     }
     
     //call back是针对主线程的 如果主线程也要执行任务(stop)时
@@ -111,30 +92,26 @@ namespace FiberServer{
     void Fiber::call(){//主线程调用 由主线程的调度器调用（stop里）
         SetThis(this);//先设置当前运行的协程
         m_state=State::EXEC;
-        if(swapcontext(&t_threadFiber->m_ctx,&m_ctx)){
-            FIBER_ASSERT2(false,"swapcontext error");
-        }
+        FIBER_ASSERT(m_ctx);
+        m_ctx = std::move(m_ctx).resume();
     }
     void Fiber::back(){
         SetThis(t_threadFiber.get());
-        if(swapcontext(&m_ctx,&t_threadFiber->m_ctx)){
-            FIBER_ASSERT2(false,"swapcontext error");
-        }
+        FIBER_ASSERT(m_caller);
+        m_caller = std::move(m_caller).resume();
     }
     void Fiber::swapIn(){//将当前协程切换为运行状态
         //从主调度器切换到任务协程
         SetThis(this);
         FIBER_ASSERT(m_state!=State::EXEC);
         m_state=State::EXEC;
-        if(swapcontext(&Scheduler::GetMainFiber()->m_ctx,&m_ctx)){
-            FIBER_ASSERT2(false,"swapcontext");
-        }
+        FIBER_ASSERT(m_ctx);
+        m_ctx = std::move(m_ctx).resume();
     }
     void Fiber::swapOut(){//当前协程切换到后台
         SetThis(Scheduler::GetMainFiber());
-        if(swapcontext(&m_ctx,&Scheduler::GetMainFiber()->m_ctx)){
-            FIBER_ASSERT2(false,"swapcontext");
-        }
+        FIBER_ASSERT(m_caller);
+        m_caller = std::move(m_caller).resume();
     }
     void Fiber::SetThis(Fiber *f){//设置当前线程的运行协程
         t_fiber=f;
@@ -237,5 +214,6 @@ namespace FiberServer{
         default:
             FIBER_ASSERT2(false,"Fiber state return error");
         }
+        return os;
     }
 }

@@ -8,9 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
-# 定义一个开关，
 option(ENABLE_ASAN "Enable AddressSanitizer" off)
-option(USE_SOCI_DB "Use SOCI database backend" off)
 
 if(ENABLE_ASAN)
     message(STATUS "AddressSanitizer enabled")
@@ -25,21 +23,19 @@ endif()
 # --- 2. 依赖库查找 ---
 # 确保 vcpkg 路径已通过命令行 -DCMAKE_TOOLCHAIN_FILE 传入，此处不再手动 set PREFIX_PATH
 find_package(Threads REQUIRED)
-find_package(Boost REQUIRED)
+find_package(Boost REQUIRED COMPONENTS context)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(jsoncpp CONFIG REQUIRED)
 
-if(USE_SOCI_DB)
-    find_package(SOCI CONFIG QUIET)
-    find_path(MYSQL_INCLUDE_DIR NAMES mysql.h PATH_SUFFIXES mysql mariadb)
-    if(NOT SOCI_FOUND)
-        find_path(SOCI_INCLUDE_DIR NAMES soci/soci.h)
-        find_library(SOCI_CORE_LIBRARY NAMES soci_core)
-        find_library(SOCI_MYSQL_LIBRARY NAMES soci_mysql)
-        if(NOT SOCI_INCLUDE_DIR OR NOT SOCI_CORE_LIBRARY OR NOT SOCI_MYSQL_LIBRARY)
-            message(FATAL_ERROR "SOCI backend requested but SOCI headers/libraries were not found")
-        endif()
+find_package(SOCI CONFIG QUIET)
+find_path(MYSQL_INCLUDE_DIR NAMES mysql.h PATH_SUFFIXES mysql mariadb)
+if(NOT SOCI_FOUND)
+    find_path(SOCI_INCLUDE_DIR NAMES soci/soci.h)
+    find_library(SOCI_CORE_LIBRARY NAMES soci_core)
+    find_library(SOCI_MYSQL_LIBRARY NAMES soci_mysql)
+    if(NOT SOCI_INCLUDE_DIR OR NOT SOCI_CORE_LIBRARY OR NOT SOCI_MYSQL_LIBRARY)
+        message(FATAL_ERROR "SOCI headers/libraries were not found")
     endif()
 endif()
 
@@ -69,30 +65,21 @@ set(LIB_SRCS
     FiberServer/my/application.cpp
 )
 
-if(USE_SOCI_DB)
-    list(APPEND LIB_SRCS
-        FiberServer/db/soci_db.cpp
-        FiberServer/my/mysqlop_soci.cpp
-    )
-else()
-    list(APPEND LIB_SRCS
-        FiberServer/db/mysql.cpp
-        FiberServer/my/mysqlop.cpp
-    )
-endif()
+list(APPEND LIB_SRCS
+    FiberServer/db/db_executor.cpp
+    FiberServer/db/soci_db.cpp
+    FiberServer/my/mysqlop_soci.cpp
+)
 
 # --- 4. 目标配置 ---
 add_library(fiberserver SHARED ${LIB_SRCS})
 target_include_directories(fiberserver PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-if(USE_SOCI_DB)
-    target_compile_definitions(fiberserver PUBLIC FIBERSERVER_USE_SOCI)
-    if(MYSQL_INCLUDE_DIR)
-        target_include_directories(fiberserver PUBLIC ${MYSQL_INCLUDE_DIR})
-    endif()
-    if(SOCI_INCLUDE_DIR)
-        target_include_directories(fiberserver PUBLIC ${SOCI_INCLUDE_DIR})
-    endif()
+if(SOCI_INCLUDE_DIR)
+    target_include_directories(fiberserver PUBLIC ${SOCI_INCLUDE_DIR})
+endif()
+if(MYSQL_INCLUDE_DIR)
+    target_include_directories(fiberserver PUBLIC ${MYSQL_INCLUDE_DIR})
 endif()
 
 
@@ -103,35 +90,33 @@ target_link_libraries(fiberserver
         yaml-cpp::yaml-cpp
         Threads::Threads
         Boost::headers
+        Boost::context
         OpenSSL::SSL
         OpenSSL::Crypto
         JsonCpp::JsonCpp
         fdfsclient
-        mysqlclient  # 推荐直接使用库名，vcpkg 会自动处理路径
         z zstd       # 压缩依赖
 )
 
 # --- 7. 可执行文件 ---
-if(USE_SOCI_DB)
-    set(SOCI_LINK_TARGETS)
-    if(TARGET SOCI::soci_core)
-        list(APPEND SOCI_LINK_TARGETS SOCI::soci_core)
-    elseif(TARGET SOCI::core)
-        list(APPEND SOCI_LINK_TARGETS SOCI::core)
-    elseif(SOCI_CORE_LIBRARY)
-        list(APPEND SOCI_LINK_TARGETS ${SOCI_CORE_LIBRARY})
-    endif()
-
-    if(TARGET SOCI::soci_mysql)
-        list(APPEND SOCI_LINK_TARGETS SOCI::soci_mysql)
-    elseif(TARGET SOCI::mysql)
-        list(APPEND SOCI_LINK_TARGETS SOCI::mysql)
-    elseif(SOCI_MYSQL_LIBRARY)
-        list(APPEND SOCI_LINK_TARGETS ${SOCI_MYSQL_LIBRARY})
-    endif()
-
-    target_link_libraries(fiberserver PUBLIC ${SOCI_LINK_TARGETS})
+set(SOCI_LINK_TARGETS)
+if(TARGET SOCI::soci_core)
+    list(APPEND SOCI_LINK_TARGETS SOCI::soci_core)
+elseif(TARGET SOCI::core)
+    list(APPEND SOCI_LINK_TARGETS SOCI::core)
+elseif(SOCI_CORE_LIBRARY)
+    list(APPEND SOCI_LINK_TARGETS ${SOCI_CORE_LIBRARY})
 endif()
+
+if(TARGET SOCI::soci_mysql)
+    list(APPEND SOCI_LINK_TARGETS SOCI::soci_mysql)
+elseif(TARGET SOCI::mysql)
+    list(APPEND SOCI_LINK_TARGETS SOCI::mysql)
+elseif(SOCI_MYSQL_LIBRARY)
+    list(APPEND SOCI_LINK_TARGETS ${SOCI_MYSQL_LIBRARY})
+endif()
+
+target_link_libraries(fiberserver PUBLIC ${SOCI_LINK_TARGETS})
 
 add_executable(test FiberServer/tests/test.cpp) 
 target_link_libraries(test fiberserver)

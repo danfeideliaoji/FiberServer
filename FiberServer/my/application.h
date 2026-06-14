@@ -25,6 +25,7 @@ private:
 
 private:
     static std::atomic<bool> g_running;
+    std::unique_ptr<IOManager> m_acceptIom;
     std::unique_ptr<IOManager> m_iom;
     std::unique_ptr<ChunkManager> m_chunkManager;
     http::HttpServer::ptr m_server;
