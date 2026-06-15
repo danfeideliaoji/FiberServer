@@ -230,6 +230,14 @@ FastDFS client 配置在：
 docker/fdfs/client.conf
 ```
 
+FastDFS 调用跑在 syscall hook 模式下时，需要保持连接池开启：
+
+```conf
+use_connection_pool=true
+```
+
+不要在 hook 模式下改回 `false`。关闭连接池时，FastDFS C 客户端可能把同一个全局 tracker 连接槽返回给多个并发协程，导致多个协程同时等待同一个 fd 的读写事件。详细验证记录见 [FastDFS Hook Verification](FASTDFS_HOOK.md)。
+
 ## 已验证状态
 
 更新时间：2026-06-11
