@@ -13,6 +13,12 @@ tcp_server:
 server:
   worker_threads: 5
 
+db:
+  worker_threads: 20
+
+perf:
+  log_enabled: 1
+
 http:
   request:
     max_body_size: 67108864
@@ -29,7 +35,7 @@ mysql:
       user: "root"
       passwd: "fiberserver"
       dbname: "FiberServer"
-      connection: 10
+      connection: 30
       type: mysql
     file_info:
       host: mysql
@@ -37,7 +43,7 @@ mysql:
       user: "root"
       passwd: "fiberserver"
       dbname: "FiberServer"
-      connection: 10
+      connection: 30
       type: mysql
     file_shared:
       host: mysql
@@ -45,7 +51,7 @@ mysql:
       user: "root"
       passwd: "fiberserver"
       dbname: "FiberServer"
-      connection: 10
+      connection: 30
       type: mysql
 
 uploadfiles:

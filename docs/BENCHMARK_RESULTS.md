@@ -56,7 +56,7 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
 | 业务链路 | 300 / 30 | 全成功，读接口约 787-872 QPS |
 | 业务链路 | 500 / 50 | 全成功，读接口约 640-831 QPS |
 | 业务链路 | 800 / 80 | 全成功，读接口约 743-854 QPS |
-| 业务链路 | 1000 / 100 | `login` 和 `download` 各出现 1 个 15 秒级超时 |
+| 业务链路 | 1000 / 100 | SOCI 迁移后重跑全成功，未复现 15 秒级超时 |
 
 80 并发详细结果：
 
@@ -68,7 +68,7 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
 | download | 800 | 80 | 800 | 0 | 853.61 | 47.85ms | 81.48ms | 100.30ms | 123.30ms |
 | direct_upload | 10 | 3 | 10 | 0 | 104.34 | 23.37ms | 28.40ms | 28.40ms | 28.40ms |
 
-100 并发详细结果：
+100 并发详细结果（早期基线，SOCI 连接池和事务补齐前）：
 
 | 接口 | 请求数 | 并发 | 成功 | 错误 | QPS | 平均延迟 | P95 | P99 | 最大延迟 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -78,13 +78,87 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
 | download | 1000 | 100 | 999 | 1 | 62.67 | 72.90ms | 110.70ms | 134.23ms | 15057.43ms |
 | direct_upload | 10 | 3 | 10 | 0 | 91.45 | 28.57ms | 36.28ms | 36.28ms | 36.28ms |
 
+100 并发详细结果（SOCI 迁移后重跑）：
+
+| 接口 | 请求数 | 并发 | 成功 | 错误 | QPS | P95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| status | 1000 | 100 | 1000 | 0 | 857.55 | 109.19ms |
+| login | 1000 | 100 | 1000 | 0 | 787.59 | 113.82ms |
+| myfiles | 1000 | 100 | 1000 | 0 | 808.99 | 122.88ms |
+| download | 1000 | 100 | 1000 | 0 | 901.75 | 98.49ms |
+| direct_upload | 10 | 3 | 10 | 0 | 112.41 | 46.45ms |
+
+HTTP keep-alive 对比（Nginx 入口，300 请求 / 30 并发，`FIBER_PERF_LOG=0`）：
+
+| 接口 | 短连接 QPS | keep-alive QPS | 短连接 P95 | keep-alive P95 |
+| --- | ---: | ---: | ---: | ---: |
+| status | 811.20 | 1145.58 | 44.34ms | 35.01ms |
+| login | 700.68 | 892.00 | 55.20ms | 39.11ms |
+| myfiles | 667.10 | 826.89 | 57.31ms | 50.36ms |
+| download | 759.69 | 1078.16 | 53.84ms | 30.19ms |
+
+## 数据库与 SQL 优化后压测
+
+本轮变更：
+
+- `file_info.url` 已改名为 `file_info.owner`，避免把文件 owner 误称为 URL。
+- `file_info` 增加组合索引：`idx_owner_filename(owner, filename)`、`idx_owner_id(owner, id)`、`idx_owner_md5(owner, md5)`。
+- `/api/myfiles` 增加分页参数，默认 `limit=100`，最大 `1000`。
+- 热点单行查询增加 `LIMIT 1`，用户文件列表固定走 `idx_owner_id`，避免 `filesort`。
+- 数据库连接池等待已协程化，短请求不会因等待连接阻塞真实 HTTP worker。
+- 同步 SQL 已下沉到 DB worker，覆盖 `login/register/myfiles/download/upload/md5/deletefile/dirupload/chunkupload` 等主要路径。
+- `file_shared` 作为物理文件元数据和引用计数表使用，秒传存在性、物理文件大小、引用计数走 `file_shared`；`file_info` 保持用户文件记录和热路径列表查询。
+
+验证：
+
+- Release 构建通过。
+- `./build/test` 通过。
+- `scripts/docker_e2e.sh` 通过。
+- `EXPLAIN` 确认 `/api/myfiles` 列表查询走 `idx_owner_id`，无 `filesort`。
+- MySQL 压测后 `Slow_queries=0`，未观察到查询堆积。
+
+压测配置：
+
+```bash
+docker compose -f docker-compose.dev.yml run --rm --no-deps \
+  -e BASE_URL=http://nginx \
+  -e DOWNLOAD_BASE_URL=http://nginx \
+  -e RATE=<rate> \
+  -e DURATION=20 \
+  -e WORKERS=180 \
+  -e BENCH_KEEPALIVE=1 \
+  fiberserver-dev bash scripts/docker_bench_rate.sh
+```
+
+结果：
+
+| 目标 RPS | 时长 | Workers | 成功 | 错误 | 实际 RPS | 平均延迟 | P50 | P95 | P99 | 最大延迟 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1000 | 20s | 180 | 19999 | 1 | 996.95 | 7.08ms | 2.05ms | 22.64ms | 113.28ms | 15015.42ms |
+| 1200 | 20s | 180 | 23998 | 2 | 1195.47 | 12.28ms | 4.81ms | 46.62ms | 87.79ms | 15084.09ms |
+| 1250 | 20s | 180 | 24999 | 1 | 1239.93 | 17.27ms | 4.67ms | 78.86ms | 196.32ms | 15023.82ms |
+
+分接口结果（1200 RPS 档）：
+
+| 接口 | 请求数 | 错误 | 平均延迟 | P95 | P99 | 最大延迟 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| status | 6000 | 0 | 8.03ms | 36.09ms | 71.09ms | 164.42ms |
+| login | 5999 | 0 | 13.28ms | 56.08ms | 101.13ms | 264.01ms |
+| myfiles | 5999 | 0 | 13.53ms | 56.45ms | 99.78ms | 224.60ms |
+| download | 6000 | 0 | 9.29ms | 36.68ms | 72.26ms | 144.13ms |
+
+结论：
+
+数据库侧当前没有慢查询或连接池等待堆积，SQL 执行计划也命中新索引。压测中仍偶发 15 秒级超时，但服务端日志、MySQL `Slow_queries` 和 `/api/status` 调度队列均未显示数据库瓶颈；该长尾更可能来自 keep-alive/TCP 连接层或压测客户端连接复用路径。当前环境下较稳的业务混合吞吐档位约在 `1000-1200 RPS`，`1250 RPS` 进入临界区，`1300 RPS` 仍不稳定。
+
 ## 结论
 
 当前环境下可以认为：
 
 ```text
-业务读接口稳定档位约为 80 并发，吞吐约 740-850 QPS。
-100 并发仍能大部分完成，但 login/download 已出现偶发 15 秒级超时，不能算稳定档位。
+SOCI 迁移后，业务读接口在 100 并发、1000 请求样本下全成功。
+读接口吞吐约 787-901 QPS，未复现早期 login/download 的 15 秒级超时。
+HTTP keep-alive 对短接口有明确收益，300/30 样本下读接口 QPS 约提升 24%-41%。
 ```
 
 压测后健康检查：
@@ -96,5 +170,8 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
 ## 注意事项
 
 - 早期有一次 30 并发压测出现大量下载失败，后来确认当时 Nginx 未运行，该轮数据不作为有效结果。
+- 早期 100 并发基线出现过 `login/download` 各 1 个 15 秒级超时；SOCI 连接池和关键事务补齐后重跑未复现。
 - 当前上传压测只使用小样本，主要用于确认链路可用，不代表上传极限性能。
-- 如果后续继续优化，建议优先定位 100 并发下 `login/download` 的偶发 15 秒超时。
+- 压测脚本默认启用 `BENCH_KEEPALIVE=1`；如需复现短连接基线，可设置 `BENCH_KEEPALIVE=0`。
+- 当前服务已补性能分段日志：`total_ms`、`db_ms`、`fastdfs_ms`、`file_io_ms`，以及 SOCI 连接池的 `pool_wait_ms/create_ms`。排查瓶颈时建议开启；做纯吞吐对比时建议用 `FIBER_PERF_LOG=0` 关闭，避免日志 IO 影响结果。
+- 如果后续继续优化，建议补更长时间压测和更大的上传样本，而不是只依赖当前短样本结果。

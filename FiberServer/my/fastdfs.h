@@ -34,31 +34,16 @@ public:
     bool uploadSmallFile(const std::string& content, std::string& file_id);
 
     bool deleteFile(const std::string& file_id);
-#ifndef FIBERSERVER_USE_SOCI
-    bool deleteFileByMd5(MySQL::ptr db, const std::string& md5);
-#endif
-#ifdef FIBERSERVER_USE_SOCI
     bool deleteFileByMd5(SociDB::ptr db, const std::string& md5);
-#endif
 
     std::string downloadFile(const std::string& file_id);
     bool downloadFileToPath(const std::string& file_id, const std::string& local_path);
 
     int64_t getFileSize(const std::string& file_id);
-#ifndef FIBERSERVER_USE_SOCI
-    int64_t getFileSizeByMd5(MySQL::ptr db, const std::string& md5);
-#endif
-#ifdef FIBERSERVER_USE_SOCI
     int64_t getFileSizeByMd5(SociDB::ptr db, const std::string& md5);
-#endif
 
     std::string getFileUrl(const std::string& file_id);
-#ifndef FIBERSERVER_USE_SOCI
-    std::string getFileUrlByMd5(MySQL::ptr db, const std::string& md5);
-#endif
-#ifdef FIBERSERVER_USE_SOCI
-    std::string getFileUrlByMd5(SociDB::ptr db, const std::string& md5);
-#endif
+    std::string getFileOwnerByMd5(SociDB::ptr db, const std::string& md5);
 
 private:
     bool queryStorageServer();
@@ -90,27 +75,12 @@ public:
     static bool uploadBigFile(const std::string& file_path, std::string& file_id);
     static bool uploadSmallFile(const std::string& content, std::string& file_id);
     static bool deleteFile(const std::string& file_id);
-#ifndef FIBERSERVER_USE_SOCI
-    static bool deleteFileByMd5(MySQL::ptr db, const std::string& md5);
-#endif
-#ifdef FIBERSERVER_USE_SOCI
     static bool deleteFileByMd5(SociDB::ptr db, const std::string& md5);
-#endif
     static std::string downloadFile(const std::string& file_id);
     static bool downloadFileToPath(const std::string& file_id, const std::string& local_path);
     static int64_t getFileSize(const std::string& file_id);
-#ifndef FIBERSERVER_USE_SOCI
-    static int64_t getFileSizeByMd5(MySQL::ptr db, const std::string& md5);
-#endif
-#ifdef FIBERSERVER_USE_SOCI
     static int64_t getFileSizeByMd5(SociDB::ptr db, const std::string& md5);
-#endif
     static std::string getFileUrl(const std::string& file_id);
-#ifndef FIBERSERVER_USE_SOCI
-    static std::string getFileUrlByMd5(MySQL::ptr db, const std::string& md5);
-#endif
-#ifdef FIBERSERVER_USE_SOCI
-    static std::string getFileUrlByMd5(SociDB::ptr db, const std::string& md5);
-#endif
+    static std::string getFileOwnerByMd5(SociDB::ptr db, const std::string& md5);
 };
 }

@@ -1,60 +1,102 @@
 # MySQL C API to SOCI Migration
 
-本文档记录当前项目把 MySQL 底层 C API 业务访问逐步迁移到 SOCI 的状态、验证方式和后续工作。
+本文档记录当前项目把 MySQL 底层 C API 业务访问迁移到 SOCI 的状态、验证方式和后续工作。
 
-目标不是立刻删除所有旧 MySQL 封装，而是先让业务路径可以在 `USE_SOCI_DB=ON` 下不直接依赖 `MYSQL_BIND`、`mysql_stmt_*`、结果缓冲区和列下标解析。
+当前目标已经完成：业务路径不再直接依赖 `MYSQL_BIND`、`mysql_stmt_*`、结果缓冲区和列下标解析，默认且唯一的数据库访问后端为 SOCI。
 
 ## 当前状态
 
 已完成：
 
-- 新增 `USE_SOCI_DB` CMake 开关。
 - Docker 开发镜像已安装 SOCI MySQL backend 依赖。
 - 新增 `FiberServer/db/soci_db.h` 和 `FiberServer/db/soci_db.cpp`。
-- 新增 `FiberServer/my/mysqlop_soci.cpp`，覆盖当前主要文件元数据和共享文件路径。
+- 新增 `FiberServer/my/mysqlop_soci.cpp`，覆盖用户、文件元数据和共享文件路径。
 - `login/register` 已支持 SOCI 路径。
 - `upload/md5/myfiles/download/delete/dirupload/chunkupload` 涉及的主要文件元数据路径已支持 SOCI。
+- 旧 MySQL 版 `user_info` 管理类 helper 已补齐 SOCI 实现：`GetUserById`、`UpdatePassword`、`UpdateLastLogin`、`UpdateNickname`、`UpdateStatus`、`DeleteUser`、`GetUsersByStatus`、`GetUserCount`。
 - `FastDFS` 里按 md5 查询元数据的便捷函数已支持 `SociDB::ptr`。
-- `USE_SOCI_DB=ON` 时，CMake 不再编译 `FiberServer/db/mysql.cpp` 和 `FiberServer/my/mysqlop.cpp`。
-- `USE_SOCI_DB=ON` 时，`mysqlop.h` 不再 include `FiberServer/db/mysql.h`。
-- `scheduler.cpp` 中的 `MySQLThreadIniter` 只在旧 MySQL 构建下启用。
-
-当前仍保留：
-
-- 旧 MySQL C API 封装文件：`FiberServer/db/mysql.h`、`FiberServer/db/mysql.cpp`。
-- 旧业务访问实现：`FiberServer/my/mysqlop.cpp`。
-- 默认构建仍是 `USE_SOCI_DB=OFF`，方便回退。
+- 已移除旧 MySQL C API 封装文件：`FiberServer/db/mysql.h`、`FiberServer/db/mysql.cpp`。
+- 已移除旧业务访问实现：`FiberServer/my/mysqlop.cpp`。
+- 已移除 `USE_SOCI_DB` CMake 开关、旧 MySQL 条件编译分支和 `MySQLThreadIniter`。
+- `scripts/docker_e2e.sh` 已扩展为服务级主链路验证脚本，覆盖重复注册、正确/错误登录、小文件直传、md5 秒传检查、两用户秒传引用、分片上传、文件列表、下载和删除。
+- `SociManager::get()` 已支持连接复用和获取超时：按 `max_conn` 或兼容现有 `connection` 配置限制每个命名池的连接数，空闲连接通过 `SociDB::ptr` deleter 自动归还。
+- SOCI 路径已给会同时修改 `file_info` 和 `file_shared` 的关键链路补事务：秒传、直传落库、分片合并后落库、删除文件记录和共享引用计数。
 
 ## 已验证
 
-SOCI 构建：
+默认构建：
 
 ```bash
-docker compose -f docker-compose.dev.yml run --rm --no-deps -e USE_SOCI_DB=ON fiberserver-dev \
-  bash -lc 'cmake -S . -B build-soci -DCMAKE_BUILD_TYPE=Debug -DUSE_SOCI_DB="$USE_SOCI_DB" && cmake --build build-soci -j"$(nproc)"'
+docker compose -f docker-compose.dev.yml run --rm --no-deps fiberserver-dev \
+  bash -lc 'cmake -S . -B build -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-Release}" && cmake --build build -j"$(nproc)"'
 ```
 
-SOCI 测试：
+默认测试：
 
 ```bash
-docker compose -f docker-compose.dev.yml run --rm --no-deps -e USE_SOCI_DB=ON fiberserver-dev \
-  bash -lc './build-soci/test'
+docker compose -f docker-compose.dev.yml run --rm --no-deps fiberserver-dev \
+  bash -lc './build/test'
 ```
 
-旧 MySQL 默认路径：
+旧 MySQL C API 删除后，默认构建和 `./build/test` 已通过。
+
+SOCI 服务级 E2E：
 
 ```bash
-docker compose -f docker-compose.dev.yml run --rm --no-deps -e USE_SOCI_DB=OFF fiberserver-dev \
-  bash -lc 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DUSE_SOCI_DB="$USE_SOCI_DB" && cmake --build build -j"$(nproc)" && ./build/test'
+docker compose -f docker-compose.dev.yml up -d --force-recreate fiberserver-app nginx
+docker compose -f docker-compose.dev.yml run --rm --no-deps \
+  -e BASE_URL=http://nginx \
+  -e DOWNLOAD_BASE_URL=http://nginx \
+  -e DOWNLOAD_HEADER_BASE_URL=http://fiberserver-app:8080 \
+  -e CHUNK_UPLOAD_MODE=body \
+  fiberserver-dev bash scripts/docker_e2e.sh
 ```
 
-## 下一步
+已通过，输出形态为：
 
-### 1. 跑真实服务级 E2E
+```text
+e2e passed: user=... second_user=... file_id=... instant_file_id=... chunk_file_id=... chunk_mode=body
+```
 
-目的：确认 SOCI 不只是能编译，而是在 MySQL + FastDFS + Nginx 的完整链路里行为正确。
+旧 MySQL C API 删除后，服务级 E2E 已重新运行并通过。
 
-建议覆盖：
+SOCI 业务压测：
+
+```bash
+docker compose -f docker-compose.dev.yml run --rm --no-deps \
+  -e BASE_URL=http://nginx \
+  -e DOWNLOAD_BASE_URL=http://nginx \
+  -e REQUESTS=800 \
+  -e CONCURRENCY=80 \
+  -e UPLOAD_REQUESTS=10 \
+  -e UPLOAD_CONCURRENCY=3 \
+  fiberserver-dev bash scripts/docker_bench_business.sh
+```
+
+已在 SOCI 服务实例下通过，结果：
+
+| 场景 | 请求数 | 并发 | 成功 | 错误 | QPS | P95 | P99 | 最大延迟 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| status | 800 | 80 | 800 | 0 | 806.50 | 82.65ms | 102.73ms | 122.37ms |
+| login | 800 | 80 | 800 | 0 | 785.89 | 113.88ms | 136.89ms | 176.29ms |
+| myfiles | 800 | 80 | 800 | 0 | 795.99 | 118.63ms | 156.49ms | 175.79ms |
+| download | 800 | 80 | 800 | 0 | 901.73 | 91.49ms | 111.57ms | 173.23ms |
+| direct_upload | 10 | 3 | 10 | 0 | 135.92 | 28.21ms | 28.21ms | 28.21ms |
+
+补充小样本结果：
+
+- 200 请求 / 20 并发：`status/login/myfiles/download/direct_upload` 全部 0 错误。
+- 500 请求 / 50 并发：`status/login/myfiles/download/direct_upload` 全部 0 错误。
+- 1000 请求 / 100 并发：`status/login/myfiles/download/direct_upload` 全部 0 错误；`login` P95 约 113.82ms，`download` P95 约 98.49ms，未复现 15 秒级超时。
+- 压测后 `http://localhost:8081/api/status` 返回 `HTTP 200`，`global_queue_size=0`。
+
+## 后续
+
+### 1. 已完成验证
+
+当前已经确认 SOCI 不只是能编译，而是在 MySQL + FastDFS + Nginx 的完整链路里行为正确。
+
+脚本覆盖：
 
 - 注册新用户。
 - 重复注册同名用户。
@@ -68,83 +110,22 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps -e USE_SOCI_DB=OFF f
 - 删除文件后 `file_info` 和 `file_shared.ref_count` 是否正确。
 - `ref_count = 0` 时是否删除 FastDFS 文件和 `file_shared` 记录。
 
-预期产出：
+产出：
 
-- 一份可重复运行的 Docker E2E 脚本。
-- 如果已有 `scripts/docker_e2e.sh`，优先补它。
+- 已补 `scripts/docker_e2e.sh`。
+- 已运行 SOCI 服务实例，并通过 Nginx 入口完成真实链路验证。
+- 已运行 20/50/80/100 并发业务压测，读接口和小文件直传均为 0 错误。
 
-### 2. 给 SOCI 补连接池和超时语义
-
-当前 `SociManager::get()` 每次创建一个新连接，并且 `timeout_ms` 暂未使用。
-
-下一步应补：
-
-- 连接池，优先复用连接。
-- `min_conn/max_conn` 或兼容现有配置语义。
-- 获取连接超时。
-- 连接失效后的重连。
-- 清晰的日志：连接创建、获取失败、SQL 异常。
-
-这里可以先用简单自定义池，不急着一次接入复杂抽象。
-
-### 3. 给秒传和删除路径加事务
-
-当前一些路径会同时修改 `file_info` 和 `file_shared`。后续应保证这些操作原子化。
-
-优先处理：
-
-- 秒传：`file_shared::IncrementRef` + `file_info::CreateFile`。
-- 删除：`file_info::DeleteFileRecordByUserAndFilename` + `file_shared::DecrementRef/DeleteShared`。
-- 分片合并后落库：`file_info::CreateFile` + `file_shared::CreateShared`。
-
-建议新增一个很薄的 SOCI transaction helper，或者在业务 helper 里直接使用 `soci::transaction`。
-
-### 4. 补齐剩余 user_info SOCI helper
-
-当前登录/注册需要的 user_info SOCI 路径已经有了，但旧接口里还有一些管理类函数没有迁移。
-
-待补：
-
-- `GetUserById`
-- `UpdatePassword`
-- `UpdateLastLogin`
-- `UpdateNickname`
-- `UpdateStatus`
-- `DeleteUser`
-- `GetUsersByStatus`
-- `GetUserCount`
-
-这些函数迁移完成后，用户相关业务就可以完全脱离旧 MySQL C API。
-
-### 5. 再决定是否删除旧 MySQL C API
-
-不要现在就删除旧封装。建议等下面条件满足后再删：
-
-- SOCI E2E 通过。
-- SOCI 压测没有明显阻塞或错误率问题。
-- 连接池和事务补齐。
-- 默认构建可以切到 `USE_SOCI_DB=ON`。
-- 至少保留一个提交点可快速回退。
-
-删除时再处理：
-
-- 移除 `FiberServer/db/mysql.h` 和 `FiberServer/db/mysql.cpp`。
-- 移除 `FiberServer/my/mysqlop.cpp`。
-- 清理 CMake 里的 `mysqlclient` 直接链接项。
-- 清理 `MySQLThreadIniter` 相关代码。
+### 2. 后续增强
 
 ## 风险
 
-- SOCI 是同步库，需要压测确认不会破坏当前协程 worker 的延迟表现。
-- 当前 `SociManager` 还没有连接池，真实并发下性能和连接数都需要验证。
-- 秒传和删除路径如果不加事务，异常时可能出现 `file_info` 与 `file_shared` 不一致。
+- SOCI 是同步库，当前 100 并发业务压测未观察到错误；后续仍建议补更长时间压测。
+- 当前 `SociManager` 连接池使用线程级等待，当前小/中样本未观察到连接池超时；真实生产并发下仍需要根据延迟和连接数调参。
+- SOCI 数据库事务已覆盖 `file_info` 与 `file_shared` 的关键组合写入；删除路径中 FastDFS 文件删除发生在数据库事务提交之后，后续如要强化一致性，需要补失败补偿或清理任务。
 - `filename + user` 定位文件的语义需要确认是否允许同名文件；如果允许同名，应改用 `file_id` 或记录 `id`。
 
 ## 当前推荐顺序
 
-1. 先补 Docker E2E 脚本。
-2. 跑通 SOCI 的 register/login/upload/md5/myfiles/download/delete 全链路。
-3. 加 SOCI 连接池。
-4. 给秒传和删除路径加事务。
-5. 补齐剩余 user_info helper。
-6. 再考虑把默认构建切到 SOCI。
+1. 视需要补更长时间 SOCI 压测和回归验证。
+2. 视需要给 FastDFS 删除失败补补偿或异步清理任务。

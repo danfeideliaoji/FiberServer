@@ -1,7 +1,7 @@
 #include "hash_util.h"
 
-#include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <stdexcept>
 #include <string.h>
 #include <openssl/md5.h>
@@ -278,66 +278,40 @@ std::string sha1sum(const std::string &data) {
     return sha1sum(data.c_str(), data.size());
 }
 
-struct xorStruct {
-    xorStruct(char value) : m_value(value) {}
-    char m_value;
-    char operator()(char in) const { return in ^ m_value; }
-};
-
-template <class CTX,
-    CTX* (*ctx_new)(),
-    void (*ctx_free)(CTX*),
-    const EVP_MD* (*get_md)(),
-    unsigned int B, unsigned int L>
+template <const EVP_MD* (*get_md)(), unsigned int L>
 std::string hmac(const std::string &text, const std::string &key) {
-    std::string keyLocal = key;
-    CTX *ctx = nullptr;
-    if (keyLocal.size() > B) {
-        ctx = ctx_new();
-        HMAC_Init_ex(ctx, keyLocal.c_str(), keyLocal.size(), get_md(), nullptr);
-        keyLocal.resize(L);
-        HMAC_Final(ctx, (unsigned char *)&keyLocal[0], nullptr);
-        ctx_free(ctx);
+    if (key.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        throw std::invalid_argument("hmac key length exceeds OpenSSL API limit");
     }
-    keyLocal.append(B - keyLocal.size(), '\0');
-    std::string ipad = keyLocal, opad = keyLocal;
-    std::transform(ipad.begin(), ipad.end(), ipad.begin(), xorStruct(0x36));
-    std::transform(opad.begin(), opad.end(), opad.begin(), xorStruct(0x5c));
-    ctx = ctx_new();
-    HMAC_Init_ex(ctx, nullptr, 0, get_md(), nullptr);
-    HMAC_Update(ctx, (unsigned char *)ipad.c_str(), B);
-    HMAC_Update(ctx, (unsigned char *)text.c_str(), text.size());
     std::string result;
     result.resize(L);
-    HMAC_Final(ctx, (unsigned char *)&result[0], nullptr);
-    ctx_free(ctx);
+    unsigned int result_len = 0;
+    unsigned char *ret = HMAC(get_md(),
+        key.data(),
+        static_cast<int>(key.size()),
+        reinterpret_cast<const unsigned char *>(text.data()),
+        text.size(),
+        reinterpret_cast<unsigned char *>(&result[0]),
+        &result_len);
+    if (!ret) {
+        return "";
+    }
+    result.resize(result_len);
     return result;
 }
 
 std::string hmac_md5(const std::string &text, const std::string &key) {
-    return hmac<HMAC_CTX,
-        HMAC_CTX_new,
-        HMAC_CTX_free,
-        EVP_md5,
-        MD5_CBLOCK, MD5_DIGEST_LENGTH>
+    return hmac<EVP_md5, MD5_DIGEST_LENGTH>
         (text, key);
 }
 
 std::string hmac_sha1(const std::string &text, const std::string &key) {
-    return hmac<HMAC_CTX,
-        HMAC_CTX_new,
-        HMAC_CTX_free,
-        EVP_sha1,
-        SHA_CBLOCK, SHA_DIGEST_LENGTH>
+    return hmac<EVP_sha1, SHA_DIGEST_LENGTH>
         (text, key);
 }
 
 std::string hmac_sha256(const std::string &text, const std::string &key) {
-    return hmac<HMAC_CTX,
-        HMAC_CTX_new,
-        HMAC_CTX_free,
-        EVP_sha256,
-        SHA256_CBLOCK, SHA256_DIGEST_LENGTH>
+    return hmac<EVP_sha256, SHA256_DIGEST_LENGTH>
         (text, key);
 }
 

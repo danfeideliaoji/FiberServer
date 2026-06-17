@@ -431,9 +431,9 @@ work stealing 简化策略：
 - 已新增服务线程数配置 `server.worker_threads`，默认值为 5，保持原运行行为。
 - 已新增环境变量覆盖 `FIBER_WORKER_THREADS`，方便重启服务时测试不同线程数。
 - 已验证 `FIBER_WORKER_THREADS=2` 生效，`/api/status` 显示 2 个 Processor；验证后已恢复默认 5 线程运行状态。
-- 编译过程中 `FiberServer/util/hash_util.cpp` 有 OpenSSL 3.0 deprecation warnings，目前不影响构建和测试。
+- `FiberServer/util/hash_util.cpp` 的 OpenSSL 3.0 HMAC deprecation warnings 已处理，并补充 HMAC 标准向量测试。
 
 后续优先事项：
 
 1. 使用 `FIBER_WORKER_THREADS=1/2/4/8` 重启服务，配合 `scripts/docker_bench_matrix.sh` 记录多线程和多并发组合数据。
-2. 视需要处理 OpenSSL 3.0 deprecation warnings，避免后续升级依赖时变成构建错误。
+2. 继续补更长时间业务压测和更大的上传样本，确认当前短样本结果能否稳定复现。

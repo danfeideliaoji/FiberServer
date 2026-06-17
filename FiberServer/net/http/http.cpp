@@ -180,6 +180,9 @@ std::ostream& HttpRequest::dump(std::ostream& os) const {
         if(!m_websocket && strcasecmp(i.first.c_str(), "connection") == 0) {
             continue;
         }
+        if(!m_websocket && strcasecmp(i.first.c_str(), "content-length") == 0) {
+            continue;
+        }
         os << i.first << ": " << i.second << "\r\n";
     }
 
@@ -195,11 +198,13 @@ std::ostream& HttpRequest::dump(std::ostream& os) const {
 void HttpRequest::init() {
     std::string conn = getHeader("connection");
     if(!conn.empty()) {
-        if(strcasecmp(conn.c_str(), "keep-alive") == 0) {
-            m_close = false;
-        } else {
+        if(strcasecmp(conn.c_str(), "close") == 0) {
             m_close = true;
+        } else if(strcasecmp(conn.c_str(), "keep-alive") == 0) {
+            m_close = false;
         }
+    } else {
+        m_close = m_version <= 0x10;
     }
 }
 
@@ -337,12 +342,8 @@ std::ostream& HttpResponse::dump(std::ostream& os) const {
     if(!m_websocket) {
         os << "connection: " << (m_close ? "close" : "keep-alive") << "\r\n";
     }
-    if(!m_body.empty()) {
-        os << "content-length: " << m_body.size() << "\r\n\r\n"
-           << m_body;
-    } else {
-        os << "\r\n";
-    }
+    os << "content-length: " << m_body.size() << "\r\n\r\n"
+       << m_body;
     return os;
 }
 

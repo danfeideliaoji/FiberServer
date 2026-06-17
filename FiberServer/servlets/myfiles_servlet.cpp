@@ -1,7 +1,9 @@
 #include "myfiles_servlet.h"
 #include "FiberServer/base/log.h"
 #include "FiberServer/base/util.h"
+#include "FiberServer/db/db_executor.h"
 #include "FiberServer/my/mysqlop.h"
+#include "FiberServer/util/perf_util.h"
 #include <json/value.h>
 #include <exception>
 
@@ -17,6 +19,7 @@ MyFilesServlet::MyFilesServlet()
 int32_t MyFilesServlet::handle(http::HttpRequest::ptr request,
                                http::HttpResponse::ptr response,
                                http::HttpSession::ptr session) {
+    ScopedPerfLog perf("/api/myfiles");
     response->setHeader("Content-Type", "text/json charset=utf-8");
     std::string body = request->getBody();
     try {
@@ -32,24 +35,47 @@ int32_t MyFilesServlet::handle(http::HttpRequest::ptr request,
             response->setBody("{\"code\":1,\"msg\":\"username is required\"}");
             return 0;
         }
+        int offset = JsonUtil::GetInt32(json, "offset", 0);
+        int limit = JsonUtil::GetInt32(json, "limit", 100);
+        if (offset < 0) {
+            offset = 0;
+        }
+        if (limit <= 0) {
+            limit = 100;
+        } else if (limit > 1000) {
+            limit = 1000;
+        }
 
-#ifdef FIBERSERVER_USE_SOCI
-        SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
-#else
-        MySQL::ptr mysql = MySQLMgr::GetInstance()->get("file_info");
-#endif
-        if (!mysql) {
+        PerfTimer db_timer;
+        struct DbResult {
+            bool ok = false;
+            std::vector<std::shared_ptr<FileInfo>> files;
+        };
+        auto db_result = DbExecutorMgr::GetInstance()->submit([username, offset, limit]() {
+            DbResult result;
+            SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
+            if (!mysql) {
+                return result;
+            }
+            result.ok = true;
+            result.files = file_info::GetFileListByUser(mysql, username, offset, limit);
+            return result;
+        });
+        if (!db_result.ok) {
+            perf.addDbMs(db_timer.elapsedMs());
             FIBER_LOG_ERROR(g_logger) << "mysql connection error";
             response->setBody("{\"code\":1,\"msg\":\"mysql connection error\"}");
             return 0;
         }
 
-        // 按用户名查询文件列表（url 字段存用户名）
-        auto files = file_info::GetFileListByUser(mysql, username, 0, 1000);
+        auto files = db_result.files;
+        perf.addDbMs(db_timer.elapsedMs());
         
         Json::Value result;
         result["code"] = 0;
         result["msg"] = "success";
+        result["offset"] = offset;
+        result["limit"] = limit;
         
         Json::Value filesArray(Json::arrayValue);
         for (const auto& file : files) {
@@ -65,6 +91,7 @@ int32_t MyFilesServlet::handle(http::HttpRequest::ptr request,
         
         result["files"] = filesArray;
         response->setBody(JsonUtil::ToString(result));
+        perf.setStatus("ok");
         return 0;
     } catch (std::exception& e) {
         FIBER_LOG_ERROR(g_logger) << "handle exception: " << e.what();

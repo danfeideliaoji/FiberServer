@@ -1,6 +1,7 @@
 #include "chunkManager.h"
 #include "FiberServer/base/log.h"
 #include "FiberServer/base/util.h"
+#include <fstream>
 
 namespace FiberServer {
 
@@ -68,7 +69,8 @@ bool ChunkManager::saveChunk(const std::string& tmp_file_path, const std::string
                              const std::string& md5, int index) {
 
     
-        std::string path = buildChunkPath(username, md5,index);
+    FSUtil::Mkdir(buildTaskPath(username, md5));
+    std::string path = buildChunkPath(username, md5,index);
     
     // 移动文件到任务目录
     if (!FSUtil::Mv(tmp_file_path, path)) {
@@ -88,6 +90,28 @@ bool ChunkManager::saveChunk(const std::string& tmp_file_path, const std::string
     //     return false;
     // }
     
+    return true;
+}
+
+bool ChunkManager::saveChunkContent(const std::string& content, const std::string& username,
+                                    const std::string& md5, int index) {
+    if (content.empty()) {
+        FIBER_LOG_ERROR(g_logger) << "saveChunkContent error, empty content";
+        return false;
+    }
+
+    std::string path = buildChunkPath(username, md5, index);
+    std::ofstream ofs;
+    if (!FSUtil::OpenForWrite(ofs, path, std::ios::binary | std::ios::trunc)) {
+        FIBER_LOG_ERROR(g_logger) << "saveChunkContent error, open failed, path=" << path;
+        return false;
+    }
+
+    ofs.write(content.data(), content.size());
+    if (!ofs.good()) {
+        FIBER_LOG_ERROR(g_logger) << "saveChunkContent error, write failed, path=" << path;
+        return false;
+    }
     return true;
 }
 

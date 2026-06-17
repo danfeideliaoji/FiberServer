@@ -20,6 +20,7 @@ namespace FiberServer{
     //atomic重载了++ -- 这些是线程安全的
     static std::atomic<uint64_t> s_fiber_id{0};//协程di 因为多线程 所以用原子变量
     static std::atomic<uint64_t> s_fiber_count{0};//协程总数
+
     uint64_t Fiber::GetFiberId(){//获得当前运行的协程id
         if(t_fiber){
             return t_fiber->getId();
@@ -83,7 +84,7 @@ namespace FiberServer{
                 } else {
                     Fiber::MainFunc();
                 }
-                return std::move(m_caller);
+                return std::move(m_caller); // 要切回的调度协程
             });
     }
     

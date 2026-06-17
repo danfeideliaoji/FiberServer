@@ -19,6 +19,7 @@
 #include "FiberServer/hook.h"
 #include "FiberServer/iomanager.h"
 #include "FiberServer/net/address.h"
+#include "FiberServer/util/hash_util.h"
 
 struct SchedulerStatsSum {
     size_t local_scheduled = 0;
@@ -367,10 +368,24 @@ void test_address(){
     auto addrIP=std::dynamic_pointer_cast<FiberServer::IPAddress>(addr);
     
 }
+
+void test_hmac_vectors() {
+    const std::string text = "The quick brown fox jumps over the lazy dog";
+    const std::string key = "key";
+    assert(FiberServer::hexstring_from_data(FiberServer::hmac_md5(text, key))
+        == "80070713463e7749b90c2dc24911e275");
+    assert(FiberServer::hexstring_from_data(FiberServer::hmac_sha1(text, key))
+        == "de7c9b85b8b78aa6bc8a7a36f70a90701c9db4d9");
+    assert(FiberServer::hexstring_from_data(FiberServer::hmac_sha256(text, key))
+        == "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8");
+    std::cout << "hmac vector test passed" << std::endl;
+}
+
 int main(){
    FiberServer::Thread::SetName("main");
     // test_log_time();
     // test_mutex();
+   test_hmac_vectors();
    test_gmp_scheduler();
    test_gmp_batch_stealing();
     // test_config();   

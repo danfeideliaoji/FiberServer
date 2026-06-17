@@ -1,7 +1,5 @@
 #include "mysqlop.h"
 
-#ifdef FIBERSERVER_USE_SOCI
-
 #include "FiberServer/base/log.h"
 
 #include <soci/soci.h>
@@ -29,7 +27,7 @@ static std::shared_ptr<FileInfo> FileInfoFromRow(const soci::row& row) {
     info->id = row.get<long long>("id");
     info->md5 = row.get<std::string>("md5");
     info->file_id = row.get<std::string>("file_id");
-    info->url = row.get<std::string>("url");
+    info->owner = row.get<std::string>("owner");
     info->filename = row.get<std::string>("filename", "");
     info->size = row.get<long long>("size");
     info->type = row.get<std::string>("type", "");
@@ -64,6 +62,28 @@ bool CreateUser(SociDB::ptr db, const std::string& username,
     }
 }
 
+std::shared_ptr<UserInfo> GetUserById(SociDB::ptr db, int64_t id) {
+    if (!db) {
+        return nullptr;
+    }
+
+    try {
+        auto& sql = db->session();
+        soci::row row;
+        sql << "SELECT id, username, password, salt, nickname, status "
+               "FROM user_info WHERE id = :id",
+               soci::use(id, "id"),
+               soci::into(row);
+        if (!sql.got_data()) {
+            return nullptr;
+        }
+        return UserInfoFromRow(row);
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetUserById error: " << e.what();
+        return nullptr;
+    }
+}
+
 std::shared_ptr<UserInfo> GetUserByUsername(SociDB::ptr db, const std::string& username) {
     if (!db) {
         return nullptr;
@@ -83,6 +103,126 @@ std::shared_ptr<UserInfo> GetUserByUsername(SociDB::ptr db, const std::string& u
     } catch (const std::exception& e) {
         FIBER_LOG_ERROR(g_logger) << "SOCI GetUserByUsername error: " << e.what();
         return nullptr;
+    }
+}
+
+bool UpdatePassword(SociDB::ptr db, int64_t user_id,
+                    const std::string& password, const std::string& salt) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        db->session() << "UPDATE user_info SET password = :password, salt = :salt WHERE id = :id",
+                         soci::use(password, "password"),
+                         soci::use(salt, "salt"),
+                         soci::use(user_id, "id");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI UpdatePassword error: " << e.what();
+        return false;
+    }
+}
+
+bool UpdateLastLogin(SociDB::ptr db, int64_t user_id) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        db->session() << "UPDATE user_info SET last_login = NOW() WHERE id = :id",
+                         soci::use(user_id, "id");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI UpdateLastLogin error: " << e.what();
+        return false;
+    }
+}
+
+bool UpdateNickname(SociDB::ptr db, int64_t user_id, const std::string& nickname) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        db->session() << "UPDATE user_info SET nickname = :nickname WHERE id = :id",
+                         soci::use(nickname, "nickname"),
+                         soci::use(user_id, "id");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI UpdateNickname error: " << e.what();
+        return false;
+    }
+}
+
+bool UpdateStatus(SociDB::ptr db, int64_t user_id, int8_t status) {
+    if (!db) {
+        return false;
+    }
+
+    int status_value = status;
+    try {
+        db->session() << "UPDATE user_info SET status = :status WHERE id = :id",
+                         soci::use(status_value, "status"),
+                         soci::use(user_id, "id");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI UpdateStatus error: " << e.what();
+        return false;
+    }
+}
+
+bool DeleteUser(SociDB::ptr db, int64_t user_id) {
+    if (!db) {
+        return false;
+    }
+
+    try {
+        db->session() << "DELETE FROM user_info WHERE id = :id",
+                         soci::use(user_id, "id");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI DeleteUser error: " << e.what();
+        return false;
+    }
+}
+
+std::vector<std::shared_ptr<UserInfo>> GetUsersByStatus(SociDB::ptr db, int8_t status) {
+    std::vector<std::shared_ptr<UserInfo>> users;
+    if (!db) {
+        return users;
+    }
+
+    int status_value = status;
+    try {
+        auto& sql = db->session();
+        soci::rowset<soci::row> rows =
+            (sql.prepare << "SELECT id, username, password, salt, nickname, status "
+                            "FROM user_info WHERE status = :status",
+                            soci::use(status_value, "status"));
+        for (const auto& row : rows) {
+            users.push_back(UserInfoFromRow(row));
+        }
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetUsersByStatus error: " << e.what();
+    }
+
+    return users;
+}
+
+int64_t GetUserCount(SociDB::ptr db) {
+    if (!db) {
+        return 0;
+    }
+
+    try {
+        long long count = 0;
+        db->session() << "SELECT COUNT(*) FROM user_info",
+                         soci::into(count);
+        return count;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetUserCount error: " << e.what();
+        return 0;
     }
 }
 
@@ -116,7 +256,7 @@ bool ExistsByFileId(SociDB::ptr db, const std::string& file_id) {
     try {
         auto& sql = db->session();
         int id = 0;
-        sql << "SELECT id FROM file_info WHERE file_id = :file_id LIMIT 1",
+        sql << "SELECT id FROM file_shared WHERE file_id = :file_id LIMIT 1",
                soci::use(file_id, "file_id"),
                soci::into(id);
         return sql.got_data();
@@ -134,7 +274,8 @@ bool ExistsByMd5AndUser(SociDB::ptr db, const std::string& md5, const std::strin
     try {
         auto& sql = db->session();
         int id = 0;
-        sql << "SELECT id FROM file_info WHERE md5 = :md5 AND url = :user LIMIT 1",
+        sql << "SELECT id FROM file_info FORCE INDEX (idx_owner_md5) "
+               "WHERE owner = :user AND md5 = :md5 LIMIT 1",
                soci::use(md5, "md5"),
                soci::use(user, "user"),
                soci::into(id);
@@ -146,18 +287,18 @@ bool ExistsByMd5AndUser(SociDB::ptr db, const std::string& md5, const std::strin
 }
 
 bool CreateFile(SociDB::ptr db, const std::string& md5, const std::string& file_id,
-                const std::string& url, const std::string& filename,
+                const std::string& owner, const std::string& filename,
                 int64_t size, const std::string& type) {
     if (!db) {
         return false;
     }
 
     try {
-        db->session() << "INSERT INTO file_info (md5, file_id, url, filename, size, type, count) "
-                         "VALUES (:md5, :file_id, :url, :filename, :size, :type, 1)",
+        db->session() << "INSERT INTO file_info (md5, file_id, owner, filename, size, type, count) "
+                         "VALUES (:md5, :file_id, :owner, :filename, :size, :type, 1)",
                          soci::use(md5, "md5"),
                          soci::use(file_id, "file_id"),
-                         soci::use(url, "url"),
+                         soci::use(owner, "owner"),
                          soci::use(filename, "filename"),
                          soci::use(size, "size"),
                          soci::use(type, "type");
@@ -169,15 +310,15 @@ bool CreateFile(SociDB::ptr db, const std::string& md5, const std::string& file_
 }
 
 bool UpdateFile(SociDB::ptr db, const std::string& file_id,
-                const std::string& url, int64_t size, const std::string& type) {
+                const std::string& owner, int64_t size, const std::string& type) {
     if (!db) {
         return false;
     }
 
     try {
-        db->session() << "UPDATE file_info SET url = :url, size = :size, type = :type "
+        db->session() << "UPDATE file_info SET owner = :owner, size = :size, type = :type "
                          "WHERE file_id = :file_id",
-                         soci::use(url, "url"),
+                         soci::use(owner, "owner"),
                          soci::use(size, "size"),
                          soci::use(type, "type"),
                          soci::use(file_id, "file_id");
@@ -225,7 +366,7 @@ int64_t GetTotalStorageSize(SociDB::ptr db) {
 
     try {
         long long size = 0;
-        db->session() << "SELECT COALESCE(SUM(size), 0) FROM file_info",
+        db->session() << "SELECT COALESCE(SUM(file_size), 0) FROM file_shared",
                          soci::into(size);
         return size;
     } catch (const std::exception& e) {
@@ -242,8 +383,11 @@ std::shared_ptr<FileInfo> GetFileById(SociDB::ptr db, const std::string& file_id
     try {
         auto& sql = db->session();
         soci::row row;
-        sql << "SELECT id, md5, file_id, url, filename, size, type, count, create_time, update_time "
-               "FROM file_info WHERE file_id = :file_id",
+        sql << "SELECT fi.id, fi.md5, COALESCE(fs.file_id, fi.file_id) AS file_id, "
+               "fi.owner, fi.filename, COALESCE(fs.file_size, fi.size) AS size, "
+               "fi.type, COALESCE(fs.ref_count, fi.count) AS count, fi.create_time, fi.update_time "
+               "FROM file_info fi LEFT JOIN file_shared fs ON fs.file_md5 = fi.md5 "
+               "WHERE COALESCE(fs.file_id, fi.file_id) = :file_id LIMIT 1",
                soci::use(file_id, "file_id"),
                soci::into(row);
         if (!sql.got_data()) {
@@ -264,8 +408,11 @@ std::shared_ptr<FileInfo> GetFileByMd5(SociDB::ptr db, const std::string& md5) {
     try {
         auto& sql = db->session();
         soci::row row;
-        sql << "SELECT id, md5, file_id, url, filename, size, type, count, create_time, update_time "
-               "FROM file_info WHERE md5 = :md5",
+        sql << "SELECT fi.id, fi.md5, COALESCE(fs.file_id, fi.file_id) AS file_id, "
+               "fi.owner, fi.filename, COALESCE(fs.file_size, fi.size) AS size, "
+               "fi.type, COALESCE(fs.ref_count, fi.count) AS count, fi.create_time, fi.update_time "
+               "FROM file_info fi LEFT JOIN file_shared fs ON fs.file_md5 = fi.md5 "
+               "WHERE fi.md5 = :md5 LIMIT 1",
                soci::use(md5, "md5"),
                soci::into(row);
         if (!sql.got_data()) {
@@ -288,8 +435,9 @@ std::shared_ptr<FileInfo> GetFileByUserAndFilename(SociDB::ptr db,
     try {
         auto& sql = db->session();
         soci::row row;
-        sql << "SELECT id, md5, file_id, url, filename, size, type, count, create_time, update_time "
-               "FROM file_info WHERE url = :user AND filename = :filename",
+        sql << "SELECT id, md5, file_id, owner, filename, size, type, count, create_time, update_time "
+               "FROM file_info FORCE INDEX (idx_owner_filename) "
+               "WHERE owner = :user AND filename = :filename LIMIT 1",
                soci::use(user, "user"),
                soci::use(filename, "filename"),
                soci::into(row);
@@ -315,8 +463,9 @@ std::vector<std::shared_ptr<FileInfo>> GetFileListByUser(SociDB::ptr db,
     try {
         auto& sql = db->session();
         soci::rowset<soci::row> rows =
-            (sql.prepare << "SELECT id, md5, file_id, url, filename, size, type, count, create_time, update_time "
-                            "FROM file_info WHERE url = :user ORDER BY id DESC LIMIT :limit OFFSET :offset",
+            (sql.prepare << "SELECT id, md5, file_id, owner, filename, size, type, count, create_time, update_time "
+                            "FROM file_info FORCE INDEX (idx_owner_id) "
+                            "WHERE owner = :user ORDER BY id DESC LIMIT :limit OFFSET :offset",
                             soci::use(user, "user"),
                             soci::use(limit, "limit"),
                             soci::use(offset, "offset"));
@@ -338,7 +487,7 @@ int64_t GetFileSize(SociDB::ptr db, const std::string& file_id) {
     try {
         auto& sql = db->session();
         long long size = 0;
-        sql << "SELECT size FROM file_info WHERE file_id = :file_id",
+        sql << "SELECT file_size FROM file_shared WHERE file_id = :file_id",
                soci::use(file_id, "file_id"),
                soci::into(size);
         if (!sql.got_data()) {
@@ -359,7 +508,7 @@ int64_t GetFileSizeByMd5(SociDB::ptr db, const std::string& md5) {
     try {
         auto& sql = db->session();
         long long size = 0;
-        sql << "SELECT size FROM file_info WHERE md5 = :md5",
+        sql << "SELECT file_size FROM file_shared WHERE file_md5 = :md5",
                soci::use(md5, "md5"),
                soci::into(size);
         if (!sql.got_data()) {
@@ -372,44 +521,44 @@ int64_t GetFileSizeByMd5(SociDB::ptr db, const std::string& md5) {
     }
 }
 
-std::string GetFileUrl(SociDB::ptr db, const std::string& file_id) {
+std::string GetFileOwner(SociDB::ptr db, const std::string& file_id) {
     if (!db) {
         return "";
     }
 
     try {
         auto& sql = db->session();
-        std::string url;
-        sql << "SELECT url FROM file_info WHERE file_id = :file_id",
+        std::string owner;
+        sql << "SELECT owner FROM file_info WHERE file_id = :file_id",
                soci::use(file_id, "file_id"),
-               soci::into(url);
+               soci::into(owner);
         if (!sql.got_data()) {
             return "";
         }
-        return url;
+        return owner;
     } catch (const std::exception& e) {
-        FIBER_LOG_ERROR(g_logger) << "SOCI GetFileUrl error: " << e.what();
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetFileOwner error: " << e.what();
         return "";
     }
 }
 
-std::string GetFileUrlByMd5(SociDB::ptr db, const std::string& md5) {
+std::string GetFileOwnerByMd5(SociDB::ptr db, const std::string& md5) {
     if (!db) {
         return "";
     }
 
     try {
         auto& sql = db->session();
-        std::string url;
-        sql << "SELECT url FROM file_info WHERE md5 = :md5",
+        std::string owner;
+        sql << "SELECT owner FROM file_info WHERE md5 = :md5",
                soci::use(md5, "md5"),
-               soci::into(url);
+               soci::into(owner);
         if (!sql.got_data()) {
             return "";
         }
-        return url;
+        return owner;
     } catch (const std::exception& e) {
-        FIBER_LOG_ERROR(g_logger) << "SOCI GetFileUrlByMd5 error: " << e.what();
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetFileOwnerByMd5 error: " << e.what();
         return "";
     }
 }
@@ -422,7 +571,7 @@ bool DeleteFileRecordByUserAndFilename(SociDB::ptr db,
     }
 
     try {
-        db->session() << "DELETE FROM file_info WHERE url = :user AND filename = :filename",
+        db->session() << "DELETE FROM file_info WHERE owner = :user AND filename = :filename",
                          soci::use(user, "user"),
                          soci::use(filename, "filename");
         return true;
@@ -464,8 +613,11 @@ std::vector<std::shared_ptr<FileInfo>> GetFileList(SociDB::ptr db, int offset, i
     try {
         auto& sql = db->session();
         soci::rowset<soci::row> rows =
-            (sql.prepare << "SELECT id, md5, file_id, url, filename, size, type, count, create_time, update_time "
-                            "FROM file_info ORDER BY id DESC LIMIT :limit OFFSET :offset",
+            (sql.prepare << "SELECT fi.id, fi.md5, COALESCE(fs.file_id, fi.file_id) AS file_id, "
+                            "fi.owner, fi.filename, COALESCE(fs.file_size, fi.size) AS size, "
+                            "fi.type, COALESCE(fs.ref_count, fi.count) AS count, fi.create_time, fi.update_time "
+                            "FROM file_info fi LEFT JOIN file_shared fs ON fs.file_md5 = fi.md5 "
+                            "ORDER BY fi.id DESC LIMIT :limit OFFSET :offset",
                             soci::use(limit, "limit"),
                             soci::use(offset, "offset"));
         for (const auto& row : rows) {
@@ -611,5 +763,3 @@ bool DeleteShared(SociDB::ptr db, const std::string& md5) {
 }
 
 }
-
-#endif

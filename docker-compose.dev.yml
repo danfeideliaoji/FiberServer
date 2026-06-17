@@ -8,7 +8,9 @@ services:
     environment:
       FIBER_CONFIG: /workspace/docker/config.docker.yml
       FIBER_WORKER_THREADS: ${FIBER_WORKER_THREADS:-5}
-      USE_SOCI_DB: ${USE_SOCI_DB:-OFF}
+      FIBER_DB_WORKER_THREADS: ${FIBER_DB_WORKER_THREADS:-20}
+      FIBER_PERF_LOG: ${FIBER_PERF_LOG:-1}
+      CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE:-Release}
     volumes:
       - .:/workspace
       - ./docker/fdfs/client.conf:/etc/fdfs/client.conf:ro
@@ -32,7 +34,9 @@ services:
     environment:
       FIBER_CONFIG: /workspace/docker/config.docker.yml
       FIBER_WORKER_THREADS: ${FIBER_WORKER_THREADS:-5}
-      USE_SOCI_DB: ${USE_SOCI_DB:-OFF}
+      FIBER_DB_WORKER_THREADS: ${FIBER_DB_WORKER_THREADS:-20}
+      FIBER_PERF_LOG: ${FIBER_PERF_LOG:-1}
+      CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE:-Release}
     volumes:
       - .:/workspace
       - ./docker/fdfs/client.conf:/etc/fdfs/client.conf:ro
@@ -48,7 +52,7 @@ services:
     ports:
       - "8080:8080"
     command: >
-      bash -lc 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DUSE_SOCI_DB=${USE_SOCI_DB:-OFF}
+      bash -lc 'cmake -S . -B build -DCMAKE_BUILD_TYPE="$${CMAKE_BUILD_TYPE:-Release}"
       && cmake --build build -j"$$(nproc)"
       && FIBER_CONFIG=/workspace/docker/config.docker.yml ./build/server_main'
 
@@ -97,6 +101,7 @@ services:
       - "8081:80"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - fiberserver-tmp:/var/data/tmp_uploads
 
 volumes:
   fiberserver-build:

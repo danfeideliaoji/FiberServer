@@ -17,7 +17,7 @@
 
 ### 关键 Bug
 
-1. **`CreateFile` 调用参数错误** - `chunkupload_servlet.cpp:62` 和 `dirupload_servlet.cpp:54` 都把 `username` 当作 `file_id` 传入，签名是 `CreateFile(db, md5, file_id, url, size, type)` 但调用是 `CreateFile(mysql, md5, username, file_id, size, type)`（多了一个参数）
+1. **`CreateFile` 调用参数错误** - `chunkupload_servlet.cpp:62` 和 `dirupload_servlet.cpp:54` 都把 `username` 当作 `file_id` 传入，签名是 `CreateFile(db, md5, file_id, owner, size, type)` 但调用是 `CreateFile(mysql, md5, username, file_id, size, type)`（多了一个参数）
 2. **DirUploadServlet 解析方式错误** - 前端发送 `FormData`（multipart），但后端用 `JsonUtil::FromString` 解析 JSON
 3. **Md5Servlet 未注册路由** - 存在但未在 `http_server.cpp` 中添加
 4. **MyFilesServlet 不按用户过滤** - 查询所有文件而非当前用户的文件
@@ -44,7 +44,7 @@ flowchart TD
 
 ## 数据库表结构
 
-现有 `file_info` 表字段：`id, md5, file_id, url, size, type, count, create_time, update_time`
+现有 `file_info` 表字段：`id, md5, file_id, owner, size, type, count, create_time, update_time`
 
 需要新增 `user_file_list` 表来关联用户和文件：
 ```sql
@@ -110,8 +110,8 @@ CREATE TABLE IF NOT EXISTS user_file_list (
 - `/api/md5` 已在 `FiberServer/net/http/http_server.cpp` 注册。
 - `/api/download` 已在 `FiberServer/net/http/http_server.cpp` 注册为 glob servlet。
 - `DirUploadServlet` 当前从 query 读取元数据，从 request body 读取文件内容。
-- `ChunkUploadServlet` 当前要求 `X-File-Path`，并支持从 query/header 读取分片元数据。
-- `MyFilesServlet` 当前按用户名查询文件列表，`file_info.url` 字段存用户名。
+- `ChunkUploadServlet` 当前优先支持 `X-File-Path` 落盘分片；没有该 header 时，也支持直接从 request body 保存当前分片内容。分片元数据支持从 query/header 读取。
+- `MyFilesServlet` 当前按用户名查询文件列表，`file_info.owner` 字段存用户名。
 - `file_info::CreateFile` 当前签名包含 `md5, file_id, username, filename, size, type`，直传和分片上传已按该签名写入记录。
 
 本次修复：
@@ -133,7 +133,17 @@ CREATE TABLE IF NOT EXISTS user_file_list (
 - 通过 `DOWNLOAD_BASE_URL=http://nginx` 运行 `scripts/docker_e2e.sh` 已验证下载内容与上传内容一致。
 - 通过 `BASE_URL=http://fiberserver-app:8080 DOWNLOAD_BASE_URL=http://nginx` 在 Compose 网络内运行 `scripts/docker_e2e.sh` 已验证分片上传主链路：上传预检返回 `code=2`，分片逐个上传，最后一个分片返回 `code=2`，文件出现在 `/api/myfiles`，经 Nginx 下载后与原始 6MB+ 文件一致。
 
+2026-06-12 补充：
+- `ChunkUploadServlet` 已增加 raw body fallback：请求没有 `X-File-Path` 时，会把 request body 作为当前分片二进制内容写入任务目录。
+- `ChunkManager` 新增 `saveChunkContent()`，用于保存 body 分片，同时 `saveChunk()` 会确保任务目录存在。
+- `X-Chunk-Meta` 解析补齐 `filename` 字段。
+- `docker/nginx.conf` 已为 `/api/uploadchunk` 增加 `client_body_in_file_only on`，并通过 `X-File-Path` 把 Nginx body 临时文件路径传给 FiberServer。
+- `docker-compose.dev.yml` 已让 `nginx` 和 `fiberserver-app` 共享 `fiberserver-tmp:/var/data/tmp_uploads`，保证 Nginx 落盘文件能被 app 容器移动。
+- `scripts/docker_e2e.sh` 支持 `CHUNK_UPLOAD_MODE=body|file`：默认 `body` 直连验证 request body 分片，`file` 模式验证 `X-File-Path` 路径。
+- 已验证 `BASE_URL=http://fiberserver-app:8080 DOWNLOAD_BASE_URL=http://nginx CHUNK_UPLOAD_MODE=body`，直连 request body 分片上传、下载和删除链路通过。
+- 已验证 `BASE_URL=http://nginx DOWNLOAD_BASE_URL=http://nginx DOWNLOAD_HEADER_BASE_URL=http://fiberserver-app:8080 CHUNK_UPLOAD_MODE=body`，Nginx 落盘上传、Nginx 完整下载和删除链路通过。
+
 后续仍需处理：
 
-1. 分片上传依赖 `X-File-Path`，生产路径仍需要补 Nginx 落盘上传配置或改造为直接解析 body。
+1. 如果生产环境选择 Nginx 落盘上传模式，后续需要按实际部署目录、权限和清理策略复核 `client_body_temp_path`。
 2. 可以继续补 wrk 或 ab 压测记录，形成调度器改造前后对比数据。

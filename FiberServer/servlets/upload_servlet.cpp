@@ -2,8 +2,10 @@
 #include <string>
 #include "FiberServer/base/log.h"
 #include "FiberServer/base/util.h"
+#include "FiberServer/db/db_executor.h"
 #include "FiberServer/my/mysqlop.h"
 #include "FiberServer/my/chunkManager.h"
+#include "FiberServer/util/perf_util.h"
 #include <exception>
 namespace FiberServer {
 namespace http {
@@ -12,14 +14,15 @@ UploadServlet::UploadServlet()
     :Servlet("UploadServlet") {
 }
 enum UploadCode{
-    Success = 0,    // 秒传成功（文件已存在）
-    direct = 1,     // 直传模式
-    chunk = 2,      // 分片模式
+    Success = 0,
+    direct = 1,
+    chunk = 2,
     OtherError = 3,
 };
 int32_t UploadServlet::handle(http::HttpRequest::ptr request
                , http::HttpResponse::ptr response
                , http::HttpSession::ptr session) {
+    ScopedPerfLog perf("/api/upload");
     response->setHeader("Content-Type", "text/json charset=utf-8");
     std::string body = request->getBody();
     try {
@@ -37,48 +40,71 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"username, md5, size required\"}", OtherError));
             return -1;
         }
-#ifdef FIBERSERVER_USE_SOCI
-        SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
-        SociDB::ptr shared_db = SociMgr::GetInstance()->get("file_shared");
-#else
-        MySQL::ptr mysql = MySQLMgr::GetInstance()->get("file_info");
-        MySQL::ptr shared_db = MySQLMgr::GetInstance()->get("file_shared");
-#endif
-        if(!mysql || !shared_db){
-            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"mysql connection error\"}", OtherError));
-            return -1;
+        PerfTimer db_timer;
+        struct DbResult {
+            int code = direct;
+            std::string status;
+            std::string message;
+        };
+        auto db_result = DbExecutorMgr::GetInstance()->submit([username, md5, filename, size]() {
+            DbResult result;
+            SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
+            if(!mysql){
+                result.code = OtherError;
+                result.message = "mysql connection error";
+                return result;
+            }
+            if(file_info::ExistsByMd5AndUser(mysql, md5, username)){
+                result.code = Success;
+                result.status = "instant_existing";
+                result.message = "instant upload success";
+                return result;
+            }
+            if(file_shared::ExistsByMd5(mysql, md5)){
+                std::string file_id = file_shared::GetFileIdByMd5(mysql, md5);
+                soci::transaction tr(mysql->session());
+                if(!file_shared::IncrementRef(mysql, md5) ||
+                   !file_info::CreateFile(mysql, md5, file_id, username, filename, size, "")) {
+                    tr.rollback();
+                    result.code = OtherError;
+                    result.message = "instant upload db transaction failed";
+                    return result;
+                }
+                tr.commit();
+                result.code = Success;
+                result.status = "instant_shared";
+                result.message = "instant upload success";
+            }
+            return result;
+        });
+        perf.addDbMs(db_timer.elapsedMs());
+        if (db_result.code == Success || db_result.code == OtherError) {
+            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"%s\"}",
+                db_result.code, db_result.message.c_str()));
+            if (!db_result.status.empty()) {
+                perf.setStatus(db_result.status);
+            }
+            return db_result.code == Success ? 0 : -1;
         }
 
-        // 秒传检查：该用户已有此文件
-        if(file_info::ExistsByMd5AndUser(mysql, md5, username)){
-            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"instant upload success\"}", Success));
-            return 0;
-        }
-
-        // 共享文件表中存在此md5，秒传：增加引用计数，为用户创建记录
-        if(file_shared::ExistsByMd5(shared_db, md5)){
-            FIBER_LOG_INFO(g_logger) << "instant upload success, shared file";
-            std::string file_id = file_shared::GetFileIdByMd5(shared_db, md5);
-            file_shared::IncrementRef(shared_db, md5);
-            file_info::CreateFile(mysql, md5, file_id, username, filename, size, "");
-            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"instant upload success\"}", Success));
-            return 0;
-        }
-        
-        // 获取已上传的分片（断点续传用）
+        PerfTimer file_io_timer;
         std::vector<int> uploadedChunks = ChunkManager::getUploadedChunks(username, md5);
+        perf.addFileIoMs(file_io_timer.elapsedMs());
         
-        // 根据文件大小决定上传模式
+        // 闁哄秷顫夊畵渚€寮崶锔筋偨濠㈠爢鍐瘓闁告劕鍟块悾鐐▔婵犱胶鐐婃俊顖椻偓宕囩
         if (size <= ChunkManager::getChunkSizes()) {
             FIBER_LOG_INFO(g_logger) << "direct upload, size=" << size;
             response->setBody(StringUtil::Format(
                 "{\"code\":%d,\"msg\":\"direct upload\",\"uploadedChunks\":[]}", direct));
+            perf.setStatus("direct");
             return 0;
         }
 
         int totalChunks = (int)((size + ChunkManager::getChunkSizes() - 1) / ChunkManager::getChunkSizes());
 
+        PerfTimer mkdir_timer;
         FSUtil::Mkdir(ChunkManager::buildTaskPath(username, md5));
+        perf.addFileIoMs(mkdir_timer.elapsedMs());
 
         FIBER_LOG_INFO(g_logger) << "chunk upload, totalChunks=" << totalChunks 
                                  << ", uploaded=" << uploadedChunks.size();
@@ -91,6 +117,7 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
         response->setBody(StringUtil::Format(
             "{\"code\":%d,\"msg\":\"chunk upload\",\"totalChunks\":%d,\"uploadedChunks\":%s}",
             chunk, totalChunks, chunksJson.c_str()));
+        perf.setStatus("chunk");
         return 0;
     } catch (std::exception& e) {
         FIBER_LOG_ERROR(g_logger) << "handle exception: " << e.what();

@@ -45,6 +45,17 @@ public:
                           const std::string& md5, int index);
 
     /**
+     * @brief 保存请求 body 中的分片内容到对应任务目录
+     * @param content 分片二进制内容
+     * @param username 用户名
+     * @param md5 文件的唯一标识
+     * @param index 当前分片的编号
+     * @return 是否保存成功
+     */
+    static bool saveChunkContent(const std::string& content, const std::string& username,
+                                 const std::string& md5, int index);
+
+    /**
      * @brief 检查是否所有分片都到齐了
      * @param username 用户名
      * @param md5 文件的唯一标识

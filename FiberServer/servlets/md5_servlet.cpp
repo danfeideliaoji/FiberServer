@@ -1,6 +1,8 @@
 #include "md5_servlet.h"
+#include "FiberServer/db/db_executor.h"
 #include "FiberServer/my/mysqlop.h"
 #include "FiberServer/base/log.h"
+#include "FiberServer/util/perf_util.h"
 #include <exception>
 
 namespace FiberServer {
@@ -12,15 +14,16 @@ Md5Servlet::Md5Servlet()
 }
 
 enum Md5Code {
-    Success = 0,           // 秒传成功
-    FileExists = 1,        // 文件已存在（用户已有此文件）
-    NotExists = 2,         // 文件不存在，需要上传
+    Success = 0,
+    FileExists = 1,
+    NotExists = 2,
     OtherError = 3,
 };
 
 int32_t Md5Servlet::handle(http::HttpRequest::ptr request
                , http::HttpResponse::ptr response
                , http::HttpSession::ptr session) {
+    ScopedPerfLog perf("/api/md5");
     response->setHeader("Content-Type", "text/json charset=utf-8");
     std::string body = request->getBody();
     try {
@@ -42,28 +45,37 @@ int32_t Md5Servlet::handle(http::HttpRequest::ptr request
         
         FIBER_LOG_INFO(g_logger) << "md5 check: user=" << username << ", md5=" << md5 << ", filename=" << filename;
         
-#ifdef FIBERSERVER_USE_SOCI
-        SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
-#else
-        MySQL::ptr mysql = MySQLMgr::GetInstance()->get("file_info");
-#endif
-        if (!mysql) {
+        PerfTimer db_timer;
+        struct DbResult {
+            bool ok = false;
+            bool exists = false;
+        };
+        auto db_result = DbExecutorMgr::GetInstance()->submit([md5]() {
+            DbResult result;
+            SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
+            if (!mysql) {
+                return result;
+            }
+            result.ok = true;
+            result.exists = file_shared::ExistsByMd5(mysql, md5);
+            return result;
+        });
+        perf.addDbMs(db_timer.elapsedMs());
+        if (!db_result.ok) {
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"mysql connection error\"}", OtherError));
             return -1;
         }
-        
-        // 检查服务器是否已有此md5的文件（秒传核心）
-        if (file_info::ExistsByMd5(mysql, md5)) {
+
+        if (db_result.exists) {
             FIBER_LOG_INFO(g_logger) << "md5 exists, instant upload success";
-            // 秒传成功：增加引用计数
-            file_info::IncrementCount(mysql, md5);
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"instant upload success\"}", Success));
+            perf.setStatus("instant");
             return 0;
         }
-        
-        // 文件不存在，需要上传
+
         FIBER_LOG_INFO(g_logger) << "md5 not found, need upload";
         response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"file not exists, need upload\"}", NotExists));
+        perf.setStatus("not_exists");
         return 0;
     } catch (std::exception& e) {
         FIBER_LOG_ERROR(g_logger) << "handle exception: " << e.what();

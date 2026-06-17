@@ -7,20 +7,23 @@ REQUESTS="${REQUESTS:-100}"
 CONCURRENCY="${CONCURRENCY:-10}"
 UPLOAD_REQUESTS="${UPLOAD_REQUESTS:-20}"
 UPLOAD_CONCURRENCY="${UPLOAD_CONCURRENCY:-5}"
+BENCH_KEEPALIVE="${BENCH_KEEPALIVE:-1}"
 
-python3 - "$BASE_URL" "$DOWNLOAD_BASE_URL" "$REQUESTS" "$CONCURRENCY" "$UPLOAD_REQUESTS" "$UPLOAD_CONCURRENCY" <<'PY'
+python3 - "$BASE_URL" "$DOWNLOAD_BASE_URL" "$REQUESTS" "$CONCURRENCY" "$UPLOAD_REQUESTS" "$UPLOAD_CONCURRENCY" "$BENCH_KEEPALIVE" <<'PY'
 import concurrent.futures
 import hashlib
 import http.client
 import json
 import statistics
 import sys
+import threading
 import time
 import urllib.parse
 
 base_url, download_base_url = sys.argv[1], sys.argv[2]
 requests, concurrency = int(sys.argv[3]), int(sys.argv[4])
 upload_requests, upload_concurrency = int(sys.argv[5]), int(sys.argv[6])
+keepalive = sys.argv[7] not in ("0", "false", "False", "off", "OFF")
 
 username = "bench" + hashlib.md5(str(time.time_ns()).encode()).hexdigest()[:10]
 password = "pass123"
@@ -36,20 +39,51 @@ def parse_base(url):
 
 base, base_port = parse_base(base_url)
 download_base, download_port = parse_base(download_base_url)
+thread_local = threading.local()
+connection_header = "keep-alive" if keepalive else "close"
 
 def target(path, params=None):
     encoded = urllib.parse.urlencode(params or {})
     return path + (("?" + encoded) if encoded else "")
 
+def connection_key(parsed, port):
+    return (parsed.hostname, port)
+
+def get_connection(parsed, port):
+    conns = getattr(thread_local, "conns", None)
+    if conns is None:
+        conns = {}
+        thread_local.conns = conns
+    key = connection_key(parsed, port)
+    conn = conns.get(key)
+    if conn is None:
+        conn = http.client.HTTPConnection(parsed.hostname, port, timeout=15)
+        conns[key] = conn
+    return conn
+
+def close_connection(parsed, port):
+    conns = getattr(thread_local, "conns", None)
+    if not conns:
+        return
+    key = connection_key(parsed, port)
+    conn = conns.pop(key, None)
+    if conn is not None:
+        conn.close()
+
 def http_request(parsed, port, method, path, body=None, headers=None):
-    conn = http.client.HTTPConnection(parsed.hostname, port, timeout=15)
+    conn = get_connection(parsed, port) if keepalive else http.client.HTTPConnection(parsed.hostname, port, timeout=15)
     try:
-        conn.request(method, path, body=body, headers=headers or {"Connection": "close"})
+        conn.request(method, path, body=body, headers=headers or {"Connection": connection_header})
         response = conn.getresponse()
         data = response.read()
         return response.status, data, dict(response.getheaders())
+    except Exception:
+        if keepalive:
+            close_connection(parsed, port)
+        raise
     finally:
-        conn.close()
+        if not keepalive:
+            conn.close()
 
 def request_json(method, path, payload):
     body = json.dumps(payload).encode()
@@ -59,7 +93,7 @@ def request_json(method, path, payload):
         method,
         path,
         body,
-        {"Content-Type": "application/json", "Connection": "close"},
+        {"Content-Type": "application/json", "Connection": connection_header},
     )
 
 def expect_code(name, status, data, code=0):
@@ -98,7 +132,7 @@ expect_code(
         "POST",
         upload_path,
         content,
-        {"Content-Type": file_type, "Connection": "close"},
+        {"Content-Type": file_type, "Connection": connection_header},
     )[:2],
 )
 expect_code("setup myfiles", *request_json("POST", "/api/myfiles", {"username": username})[:2])
@@ -153,7 +187,7 @@ run_bench(
     "status",
     requests,
     concurrency,
-    lambda _: http_request(base, base_port, "GET", "/api/status", headers={"Connection": "close"}),
+    lambda _: http_request(base, base_port, "GET", "/api/status", headers={"Connection": connection_header}),
     ok_json_code,
 )
 run_bench(
@@ -174,7 +208,7 @@ run_bench(
     "download",
     requests,
     concurrency,
-    lambda _: http_request(download_base, download_port, "GET", download_path, headers={"Connection": "close"}),
+    lambda _: http_request(download_base, download_port, "GET", download_path, headers={"Connection": connection_header}),
     lambda status, data, headers: status == 200,
 )
 
@@ -197,9 +231,9 @@ def make_upload(index):
         "POST",
         path,
         payload,
-        {"Content-Type": file_type, "Connection": "close"},
+        {"Content-Type": file_type, "Connection": connection_header},
     )
 
 run_bench("direct_upload", upload_requests, upload_concurrency, make_upload, ok_json_code)
-print(f"business bench complete: user={username}")
+print(f"business bench complete: user={username} keepalive={int(keepalive)}")
 PY

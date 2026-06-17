@@ -73,6 +73,17 @@ public:
             tickle();
         }
     }
+    template<typename FiberOrCb>
+    void scheduleGlobal(FiberOrCb fc,int thread=-1){//强制加到全局队列
+        bool need_tickle = false;
+        {
+            MutexType::Lock lock(m_mutex);
+            need_tickle = scheduleGlobalNoLock(fc, thread);
+        }
+        if(need_tickle) {
+            tickle();
+        }
+    }
     template<class InputIterator>//用迭代器加多个任务
     void schedule(InputIterator begin, InputIterator end) {
         bool need_tickle = false;
@@ -195,6 +206,19 @@ private:
         return need_tickle || hasIdleThreads();
     }
 
+    template<class FiberOrCb>
+    bool scheduleGlobalNoLock(FiberOrCb fc, int thread) {
+        FiberAndThread ft(fc, thread);
+        if(!ft.fiber && !ft.cb) {
+            return false;
+        }
+
+        bool need_tickle = m_fibers.empty();
+        m_fibers.push_back(ft);
+        ++m_globalScheduleCount;
+        return need_tickle || hasIdleThreads();
+    }
+
     Processor* bindProcessor();
     bool popLocalTask(FiberAndThread& ft);
     bool popGlobalTask(FiberAndThread& ft, bool& tickle_me);
@@ -209,10 +233,12 @@ private:
     /// 外部提交和指定线程任务会先进入这里。
     /// 工作线程后续会在安全的情况下把普通任务搬运到本地 P 队列。
     std::list<FiberAndThread> m_fibers;
+
     /// GMP 简化模型中的 P，每个 P 持有一个本地运行队列
     /// 这是本项目里的简化版 Go P：持有本地运行队列和 P 级统计。
     /// 当前版本不实现 Go runtime 的抢占、sysmon 等完整机制。
     std::vector<std::unique_ptr<Processor>> m_processors;
+    
     /// 工作线程绑定 P 时使用的轮询游标。
     std::atomic<size_t> m_nextProcessor{0};
     /// 任务窃取选择目标 P 时使用的轮转游标。

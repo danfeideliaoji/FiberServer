@@ -82,7 +82,7 @@ void TcpServer::startAccept(Socket::ptr sock) {
         // sleep(10);
         if(client) {
             client->setRecvTimeout(m_recvTimeout);
-            m_ioWorker->schedule(std::bind(&TcpServer::handleClient,
+            m_ioWorker->scheduleGlobal(std::bind(&TcpServer::handleClient,
                         shared_from_this(), client));
         } else {
             FIBER_LOG_ERROR(g_logger) << "accept errno=" << errno

@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS file_info (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     md5 VARCHAR(128) NOT NULL,
     file_id VARCHAR(512) NOT NULL,
-    url VARCHAR(256) NOT NULL DEFAULT '',
+    owner VARCHAR(256) NOT NULL DEFAULT '',
     filename VARCHAR(256) NOT NULL DEFAULT '',
     size BIGINT NOT NULL DEFAULT 0,
     type VARCHAR(128) NOT NULL DEFAULT '',
@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS file_info (
     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_md5 (md5),
     INDEX idx_file_id (file_id),
-    INDEX idx_user_filename (url, filename)
+    INDEX idx_owner_filename (owner, filename),
+    INDEX idx_owner_id (owner, id),
+    INDEX idx_owner_md5 (owner, md5)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS file_shared (
