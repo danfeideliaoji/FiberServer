@@ -4,8 +4,15 @@ build-soci/
 build_test/
 .cache/
 .vscode/
+.claude/
+.env
+.env.*
+config.local.*
+*.local.yml
+*.local.yaml
 downloads/
 log.txt
+logs/
 *.o
 *.so
 *.a

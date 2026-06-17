@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # --- 配置区域 ---
-# 如果系统环境变量没设 VCPKG_ROOT，请在这里填入绝对路径
-export VCPKG_ROOT="/home/a/vcpkg" 
+# 如果系统环境变量没设 VCPKG_ROOT，请先在本机环境中配置。
+# 示例：export VCPKG_ROOT=/path/to/vcpkg
 
 # 检查 VCPKG_ROOT 是否设置
 if [ -z "$VCPKG_ROOT" ]; then
