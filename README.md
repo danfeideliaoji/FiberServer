@@ -1,12 +1,13 @@
 # FiberServer
 
-FiberServer 是一个基于 C++17 的文件服务项目，核心包括协程/调度器、HTTP 服务、FastDFS 文件存储、SOCI/MySQL 数据库访问，以及 Docker 化的开发和验证环境。
+FiberServer 是一个基于 C++17 的文件服务项目。项目核心参考 Go runtime 的 GMP 调度思想，用 C++ 实现了类似 Go 底层 M:N 协程调度模型，并在此基础上构建 HTTP 服务、FastDFS 文件存储、SOCI/MySQL 数据库访问，以及 Docker 化的开发和验证环境。
 
-项目当前主要覆盖用户注册、登录、文件上传、秒传、分片上传、文件列表、下载和删除等接口，适合作为 C++ 网络服务、协程调度、文件存储链路和数据库访问封装的学习与实验项目。
+项目当前主要覆盖用户注册、登录、文件上传、秒传、分片上传、文件列表、下载和删除等接口，适合作为 C++ 协程调度、网络服务、文件存储链路和数据库访问封装的学习与实验项目。
 
 ## 功能特性
 
-- C++17 实现的 fiber/coroutine 调度器
+- 参考 Go GMP 思想实现的 C++ fiber/coroutine 调度器
+- 支持本地队列、全局队列、批量搬运和任务窃取的 M:N 调度模型
 - 基于 TCP/HTTP 的服务端框架
 - Servlet 风格的接口路由
 - FastDFS 文件存储接入
@@ -42,7 +43,7 @@ FiberServer/              核心源码
   servlets/               注册、登录、上传、下载、删除等接口处理
   tests/                  测试入口和服务入口
 docker/                   Docker 配置、MySQL 初始化 SQL、Nginx 配置
-docs/                     项目说明、迁移记录、压测结果
+docs/                     项目说明、运行说明、压测结果
 plans/                    开发计划和历史记录
 scripts/                  Docker 构建、测试、运行、端到端验证和压测脚本
 wrk_bench/                wrk 压测脚本
@@ -154,14 +155,13 @@ docs/BENCHMARK_RESULTS.md
 
 - `docs/README.md`: 文档索引
 - `docs/WSL2_DOCKER.md`: WSL2 和 Docker 开发环境说明
-- `docs/SOCI_MIGRATION.md`: SOCI 数据库迁移记录
 - `docs/FASTDFS_HOOK.md`: FastDFS hook 相关说明
 - `docs/GMP_IMPLEMENTATION_SUMMARY.md`: GMP 调度器实现总结
 - `docs/BENCHMARK_RESULTS.md`: 压测结果记录
 
 ## 当前状态
 
-项目已迁移到 SOCI 数据库访问层，并移除了旧的 MySQL C API 业务路径。Docker 开发环境、端到端验证脚本和压测脚本已经补齐，当前仍适合作为开发和实验项目继续完善。
+项目当前以 Docker Compose 作为主要开发和验证入口，已补齐端到端验证脚本和压测脚本。调度器侧已经实现简化版 GMP 模型，可通过 `/api/status` 查看调度统计。
 
 ## License
 
