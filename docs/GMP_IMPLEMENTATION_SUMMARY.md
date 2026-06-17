@@ -210,7 +210,6 @@ C++ 用户态协程 + 多线程调度 + epoll 异步 IO + 阻塞 IO hook
 
 新增服务线程数配置：
 
-- `config.txt`
 - `docker/config.docker.yml`
 - `FiberServer/my/application.cpp`
 - `docker-compose.dev.yml`

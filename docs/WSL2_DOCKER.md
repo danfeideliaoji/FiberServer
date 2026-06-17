@@ -207,7 +207,7 @@ FIBER_PERF_LOG=0 docker compose -f docker-compose.dev.yml up -d --build --force-
 如果没有设置 `FIBER_CONFIG`，程序回退读取：
 
 ```text
-./config.txt
+docker/config.docker.yml
 ```
 
 ## 依赖说明

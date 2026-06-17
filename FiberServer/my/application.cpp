@@ -24,7 +24,7 @@ Application::~Application() {
 void Application::init() {
 
     const char* config_path = std::getenv("FIBER_CONFIG");
-    Config::LoadFromConfDir(config_path && *config_path ? config_path : "./config.txt");
+    Config::LoadFromConfDir(config_path && *config_path ? config_path : "docker/config.docker.yml");
     FIBER_LOG_ROOT()->setLevel(LogLevel::WARN);
     auto perf_logger = FIBER_LOG_NAME("perf");
     bool perf_log_enabled = g_perfLogEnabled->getValue();

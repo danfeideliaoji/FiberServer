@@ -11,14 +11,11 @@
 #include<sys/socket.h>
 #include<unistd.h>
 #include "FiberServer/base/log.h"
-#include "FiberServer/base/config.h"
 #include "FiberServer/thread.h"
 #include "FiberServer/base/macro.h"
 #include "FiberServer/scheduler.h"
 #include "FiberServer/fiber.h"
-#include "FiberServer/hook.h"
 #include "FiberServer/iomanager.h"
-#include "FiberServer/net/address.h"
 #include "FiberServer/util/hash_util.h"
 
 struct SchedulerStatsSum {
@@ -84,42 +81,6 @@ void test_mutex(){
     FiberServer::RWMutex::WriteLock lock(mutex);
     FIBER_LOG_INFO(FIBER_LOG_ROOT())<<"hello world";
 }
-void test_config(){
-    
-    FiberServer::Config::LoadFromConfDir("/home/a/cppproject/FiberServer/config.txt");
-    auto test=FIBER_LOG_NAME("test1");
-    std::cout<<test->toYamlString()<<std::endl;//测试从配置文件里读
-    FIBER_LOG_INFO(test)<<"this is a test"<<std::endl;
-    auto v=FiberServer::Config::LookupBase("logs"); 
-    std::cout<<v->toString()<<std::endl;//测试从logdefine转为字符串
-    for(const auto &i:FiberServer::Config::GetDatas())
-        FIBER_LOG_DEBUG(FIBER_LOG_ROOT())<<i.first<<" "<<i.second->toString();
-}
-void test_schedule(){
-    FiberServer::Config::LoadFromConfDir("/home/a/cppproject/FiberServer/config.txt");
-    FIBER_LOG_ROOT()->setLevel(FiberServer::LogLevel::INFO);
-    FiberServer::Scheduler sched(4,true,"test");
-    FIBER_LOG_INFO(FIBER_LOG_ROOT())<<"start fiber counts="<<FiberServer::Fiber::TotalFibers();
-    sched.start();
-    sched.schedule([](){
-        FIBER_LOG_INFO(FIBER_LOG_ROOT())<<"hello world ";
-        FiberServer::Fiber::YieldToReady();
-        FIBER_LOG_INFO(FIBER_LOG_ROOT())<<"hello world again";
-    });
-    sleep(1);
-     sched.schedule([](){
-        FIBER_LOG_INFO(FIBER_LOG_ROOT())<<FiberServer::Thread::GetName()<<"  "
-        <<FiberServer::Fiber::GetFiberId()<<"HELLO WORLD ";
-        FiberServer::Fiber::YieldToReady();
-        FIBER_LOG_INFO(FIBER_LOG_ROOT())<<FiberServer::Thread::GetName()<<"  "
-        <<FiberServer::Fiber::GetFiberId()<<"HELLO WORLD AGAIN";
-    });
-    sleep(2);
-    sched.stop();
-
-    FIBER_LOG_INFO(FIBER_LOG_ROOT())<<"test_schedule finished ;now fiber counts="<<FiberServer::Fiber::TotalFibers();
-}
-
 void test_gmp_scheduler(){
     FIBER_LOG_ROOT()->setLevel(FiberServer::LogLevel::WARN);
     std::atomic<int> first_run{0};
@@ -206,20 +167,6 @@ void test_gmp_batch_stealing(){
               << ", steal_executed=" << sum.steal_executed
               << ", steal_attempts=" << sum.steal_attempts
               << ", steal_fails=" << sum.steal_fails << std::endl;
-}
-
-void test_hookAndiomanager(){
-    FiberServer::Config::LoadFromConfDir("/home/a/cppproject/FiberServer/config.txt");
-    // FIBER_LOG_ROOT()->setLevel(FiberServer::LogLevel::INFO);
-    FiberServer::set_hook_enable(true);
-    FiberServer::IOManager iomanager(4,true,"test");
-    iomanager.schedule([]{
-        FIBER_LOG_INFO(FIBER_LOG_ROOT())<<"hello world before sleep";
-        sleep(1);
-        FIBER_LOG_INFO(FIBER_LOG_ROOT())<<"hello world after sleep";
-    });
-    FIBER_LOG_INFO(FIBER_LOG_ROOT())<<FiberServer::Thread::GetName()<<"  "
-        <<FiberServer::Fiber::GetFiberId()<<"HELLO WORLD ";
 }
 
 void test_iomanager_sleep_timer(){
@@ -342,33 +289,6 @@ void test_iomanager_socket_hook(){
               << local_scheduled << ", executed=" << executed << std::endl;
 }
 
-void test_hook(){//一个有趣的测试 如果是sylar的源码必定段错误
-     FiberServer::Config::LoadFromConfDir("/home/a/cppproject/FiberServer/config.txt");
-     FiberServer::set_hook_enable(true);
-     FiberServer::IOManager iomanager(1,true,"test");
-     sleep(2); //这里调用sleep会非常有意思 会跳来跳去哈哈
-     FIBER_LOG_INFO(FIBER_LOG_ROOT())<<111111111;
-}
-void test_address(){
-     FiberServer::Config::LoadFromConfDir("/home/a/cppproject/FiberServer/config.txt");
-     std::multimap<std::string,std::pair<FiberServer::Address::ptr,uint32_t>> res;
-     FiberServer::Address::GetInterfaceAddresses(res);
-     for(auto &i:res){
-       FIBER_LOG_INFO(FIBER_LOG_ROOT())<<i.first<<": "<<*i.second.first<<" "<<i.second.second;
-       auto i_IP=std::dynamic_pointer_cast<FiberServer::IPAddress>(i.second.first);
-       uint32_t port=i.second.second;
-       FIBER_LOG_INFO(FIBER_LOG_ROOT())<<i_IP->broadcastAddress(port)->toString();
-       FIBER_LOG_INFO(FIBER_LOG_ROOT())<<i_IP->networdAddress(port)->toString();
-       FIBER_LOG_INFO(FIBER_LOG_ROOT())<<i_IP->subnetMask(port)->toString();
-     }
-     auto addr=FiberServer::Address::LookupAny("baidu.com:https");
-     if(addr){
-        FIBER_LOG_INFO(FIBER_LOG_ROOT())<<*addr;
-     }
-    auto addrIP=std::dynamic_pointer_cast<FiberServer::IPAddress>(addr);
-    
-}
-
 void test_hmac_vectors() {
     const std::string text = "The quick brown fox jumps over the lazy dog";
     const std::string key = "key";
@@ -383,17 +303,10 @@ void test_hmac_vectors() {
 
 int main(){
    FiberServer::Thread::SetName("main");
-    // test_log_time();
-    // test_mutex();
    test_hmac_vectors();
    test_gmp_scheduler();
    test_gmp_batch_stealing();
-    // test_config();   
-    // test_schedule(); 
    test_iomanager_sleep_timer();
    test_iomanager_socket_hook();
-//    test_hookAndiomanager();
-    //    test_hook();
-    // test_address();
    return 0;
 }
