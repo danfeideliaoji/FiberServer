@@ -44,7 +44,6 @@ FiberServer/              核心源码
   tests/                  测试入口和服务入口
 docker/                   Docker 配置、MySQL 初始化 SQL、Nginx 配置
 docs/                     项目说明、运行说明、压测结果
-plans/                    开发计划和历史记录
 scripts/                  Docker 构建、测试、运行、端到端验证和压测脚本
 wrk_bench/                wrk 压测脚本
 ```

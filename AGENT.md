@@ -50,8 +50,6 @@
 
 计划文档：
 
-- `plans/gmp-scheduler-plan.md`
-- `plans/upload-download-plan.md`
 - `docs/WSL2_DOCKER.md`
 
 ## GMP 改造边界
@@ -119,7 +117,6 @@
 项目使用 CMake 构建，入口文件包括：
 
 - `CMakeLists.txt`
-- `build.sh`
 - `FiberServer/tests/server_main.cpp`
 - `FiberServer/tests/test.cpp`
 
@@ -164,16 +161,6 @@ bash scripts/docker_e2e.sh
 ```bash
 bash scripts/docker_run_server.sh
 ```
-
-## 文档要求
-
-任何和 GMP 调度器有关的设计变化，都要同步更新：
-
-- `plans/gmp-scheduler-plan.md`
-
-如果修改上传、下载、秒传、分片上传链路，也要同步更新：
-
-- `plans/upload-download-plan.md`
 
 ## 推荐项目表述
 

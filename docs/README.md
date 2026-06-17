@@ -1,6 +1,6 @@
 # FiberServer 文档索引
 
-本文档目录用于放置项目当前可交付、可运行、可复盘的说明材料。`plans/` 目录保留为开发过程中的计划和历史记录。
+本文档目录用于放置项目当前可交付、可运行、可复盘的说明材料。
 
 ## 推荐阅读顺序
 
@@ -23,9 +23,6 @@
 | `docs/GMP_IMPLEMENTATION_SUMMARY.md` | 本次 GMP 改造的最终说明 |
 | `docs/WSL2_DOCKER.md` | 开发、构建、运行、验证指南 |
 | `docs/BENCHMARK_RESULTS.md` | 当前压测数据和结论 |
-| `plans/gmp-scheduler-plan.md` | GMP 改造过程计划和历史记录 |
-| `plans/upload-download-plan.md` | 上传下载链路相关计划和历史记录 |
-
 ## 当前项目状态
 
 - 简化版 GMP 调度器已实现：`Processor`、本地队列、全局队列批量搬运、任务窃取。
