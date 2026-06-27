@@ -1,4 +1,6 @@
 #include "chunkupload_servlet.h"
+#include "FiberServer/servlets/artifact_auth.h"
+#include "FiberServer/my/artifact_metadata.h"
 #include "FiberServer/my/chunkManager.h"
 #include "FiberServer/my/fastdfs.h"
 #include "FiberServer/my/mysqlop.h"
@@ -7,6 +9,7 @@
 #include "FiberServer/db/db_executor.h"
 #include "FiberServer/util/perf_util.h"
 #include <exception>
+#include <map>
 namespace FiberServer {
 namespace http {
 static Logger::ptr g_logger = FIBER_LOG_NAME("Servlet");
@@ -19,6 +22,22 @@ enum ChunkUploadCode{
     OtherError=1,
     AllChunksUploaded=2,
 };
+
+static ArtifactInfo BuildArtifactInfo(const ArtifactMetadata& meta, const std::string& file_id) {
+    ArtifactInfo artifact;
+    artifact.project_name = meta.owner;
+    artifact.version = meta.version;
+    artifact.build_no = meta.build_no;
+    artifact.artifact_name = meta.artifact_name;
+    artifact.checksum = meta.checksum;
+    artifact.file_id = file_id;
+    artifact.size = meta.size;
+    artifact.artifact_type = meta.type;
+    artifact.branch = meta.branch;
+    artifact.commit_id = meta.commit_id;
+    return artifact;
+}
+
 int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
                , http::HttpResponse::ptr response
                , http::HttpSession::ptr session) {
@@ -27,11 +46,26 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
     std::string file_path = request->getHeader("X-File-Path");
     std::string body = request->getBody();
     try {
+        // 分片上传兼容两种来源：普通 body 直接传分片，或 Nginx 落盘后通过 X-File-Path 传临时文件路径。
+        // 元数据优先从 query 读取；Nginx/客户端也可以把缺失字段放进 X-Chunk-Meta。
         // 閸忓啯鏆熼幑顔荤矤 body JSON 閼惧嘲褰囬敍鍦inx 娴犲秶鍔ф导姘虫祮閸?body閿?        // 娴ｅ棗顩ч弸?Nginx client_body_in_file_only=on閿涘異ody 閸欘垵鍏樻稉铏光敄
         // 閹碘偓娴犮儰绡冮弨顖涘瘮娴?query params 閼惧嘲褰?
         Json::Value json;
-        std::string username, md5, type, filename;
-        int64_t size = 0;
+        std::map<std::string, std::string> query_params;
+        for (const auto& key : {"project_name", "project", "namespace", "username", "user",
+                                "checksum", "md5", "artifact_name", "filename", "file_name",
+                                "artifact_type", "type", "version", "build_no", "size"}) {
+            auto value = request->getParam(key);
+            if (!value.empty()) {
+                query_params[key] = value;
+            }
+        }
+        auto request_meta = ArtifactMetadata::FromParams(query_params);
+        std::string username = request_meta.owner;
+        std::string md5 = request_meta.checksum;
+        std::string type = request_meta.type;
+        std::string filename = request_meta.storage_name;
+        int64_t size = request_meta.size;
         int total_chunks = 0, chunk_index = -1;
         // FIBER_LOG_INFO(g_logger) << "body: " << body;
         // if (!body.empty() && JsonUtil::FromString(json, body)) {
@@ -46,36 +80,92 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
         // } else
         // FIBER_LOG_INFO(g_logger) << "body size: " << body.size();
         {
+            // total_chunks 和 chunk_index 是分片协议字段，必须在保存分片前确定。
             // 娴?query params 閼惧嘲褰囬敍鍫濆缁旑垰褰查柅姘崇箖 URL 閸欏倹鏆熸导鐘烩偓鎺炵礆
             // FIBER_LOG_INFO(g_logger) << "get param from query";
-            username = request->getParam("username");
-            md5 = request->getParam("md5");
-            size = request->getParamAs<int64_t>("size", 0);
-            type = request->getParam("type");
-            filename = request->getParam("filename");
             total_chunks = request->getParamAs<int>("total_chunks", 0);
             chunk_index = request->getParamAs<int>("chunk_index", -1);
         }
         // FIBER_LOG_INFO(g_logger) << "username: " << username << " md5: " << md5 << " size: " << size << " type: " << type << " filename: " << filename << " total_chunks: " << total_chunks << " chunk_index: " << chunk_index;
+        // X-Chunk-Meta 用来补齐 artifact_name/version/build_no/branch/commit_id 等制品元数据。
         // 娑旂喎鐨剧拠鏇氱矤閼奉亜鐣炬稊?header 閼惧嘲褰囬敍鍫熸付閸欘垶娼惃鍕煙瀵骏绱?
         std::string meta_header = request->getHeader("X-Chunk-Meta");
         if (!meta_header.empty()) {
             FIBER_LOG_INFO(g_logger) << "get param from header";
             Json::Value meta;
             if (JsonUtil::FromString(meta, meta_header)) {
-                if (username.empty()) username = JsonUtil::GetString(meta, "username");
-                if (md5.empty()) md5 = JsonUtil::GetString(meta, "md5");
-                if (size <= 0) size = JsonUtil::GetInt64(meta, "size");
-                if (type.empty()) type = JsonUtil::GetString(meta, "type");
-                if (filename.empty()) filename = JsonUtil::GetString(meta, "filename");
+                auto header_meta = ArtifactMetadata::FromJson(meta);
+                if (username.empty()) username = header_meta.owner;
+                if (md5.empty()) md5 = header_meta.checksum;
+                if (size <= 0) size = header_meta.size;
+                if (type.empty()) type = header_meta.type;
+                if (filename.empty()) filename = header_meta.storage_name;
+                if (request_meta.artifact_name.empty()) request_meta.artifact_name = header_meta.artifact_name;
+                if (request_meta.version.empty()) request_meta.version = header_meta.version;
+                if (request_meta.build_no.empty()) request_meta.build_no = header_meta.build_no;
+                if (request_meta.branch.empty()) request_meta.branch = header_meta.branch;
+                if (request_meta.commit_id.empty()) request_meta.commit_id = header_meta.commit_id;
+                request_meta.owner = username;
+                request_meta.checksum = md5;
+                request_meta.storage_name = filename;
+                request_meta.size = size;
+                request_meta.type = type;
+                request_meta.artifact_mode = request_meta.artifact_mode || header_meta.artifact_mode;
                 if (total_chunks <= 0) total_chunks = JsonUtil::GetInt32(meta, "total_chunks", 0);
                 if (chunk_index < 0) chunk_index = JsonUtil::GetInt32(meta, "chunk_index", -1);
             }
         }
 
         if(username.empty() || md5.empty() || size <= 0 || chunk_index < 0 || type.empty() || total_chunks <= 0) {
-            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"username, md5, size, chunk_index, type, total_chunks required\"}", OtherError));
+            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/username, checksum/md5, size, chunk_index, artifact_type/type, total_chunks required\"}", OtherError));
             return -1;
+        }
+        request_meta.owner = username;
+        request_meta.checksum = md5;
+        request_meta.storage_name = filename;
+        request_meta.size = size;
+        request_meta.type = type;
+        if(!RequireArtifactToken(request, request_meta, response)) {
+            return -1;
+        }
+
+        if(request_meta.artifact_mode) {
+            // 分片写入前先检查坐标，避免冲突制品留下临时分片或触发最终合并上传。
+            struct CoordinateCheckResult {
+                int code = Success;
+                bool stop = false;
+                std::string message;
+            };
+            auto coordinate_check = DbExecutorMgr::GetInstance()->submit([request_meta]() {
+                CoordinateCheckResult result;
+                SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
+                if(!mysql) {
+                    result.code = OtherError;
+                    result.stop = true;
+                    result.message = "mysql connection error";
+                    return result;
+                }
+                auto artifact = artifact_info::GetArtifact(mysql, request_meta.owner,
+                                                           request_meta.version,
+                                                           request_meta.build_no,
+                                                           request_meta.artifact_name);
+                if(!artifact) {
+                    return result;
+                }
+                result.stop = true;
+                if(artifact->checksum == request_meta.checksum) {
+                    result.message = "artifact already exists";
+                } else {
+                    result.code = OtherError;
+                    result.message = "artifact checksum conflict";
+                }
+                return result;
+            });
+            if(coordinate_check.stop) {
+                response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"%s\"}",
+                    coordinate_check.code, coordinate_check.message.c_str()));
+                return coordinate_check.code == Success ? 0 : -1;
+            }
         }
 
         // FIBER_LOG_INFO(g_logger) << "chunk upload: user=" << username << " md5=" << md5
@@ -102,6 +192,7 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
         }
         perf.addFileIoMs(ready_timer.elapsedMs());
         // FIBER_LOG_INFO(g_logger) << "all chunks uploaded";
+        // 所有分片到齐后先按编号合并本地临时文件，再上传到 FastDFS。
         // 閹碘偓閺堝鍨庨悧鍥ф皑缂侇亷绱濋崥鍫濊嫙楠炴湹绗傛导鐘插煂 FastDFS
         PerfTimer merge_timer;
         std::string merged_path = ChunkManager::mergeChunks(username, md5, total_chunks);
@@ -125,7 +216,7 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
             bool ok = false;
             std::string message;
         };
-        auto db_result = DbExecutorMgr::GetInstance()->submit([md5, file_id, username, filename, size, type]() {
+        auto db_result = DbExecutorMgr::GetInstance()->submit([md5, file_id, username, filename, size, type, request_meta]() {
             DbResult result;
             SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
             if(!mysql){
@@ -133,6 +224,7 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
                 return result;
             }
             soci::transaction tr(mysql->session());
+            // 合并上传完成后，数据库三类记录必须同事务提交，保证引用计数和制品元数据一致。
             if(!file_info::CreateFile(mysql, md5, file_id, username, filename, size, type)){
                 tr.rollback();
                 result.message = "create file record failed";
@@ -141,6 +233,12 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
             if(!file_shared::CreateShared(mysql, md5, file_id, size)) {
                 tr.rollback();
                 result.message = "create shared file record failed";
+                return result;
+            }
+            if(request_meta.artifact_mode &&
+               !artifact_info::CreateArtifact(mysql, BuildArtifactInfo(request_meta, file_id))) {
+                tr.rollback();
+                result.message = "create artifact metadata failed";
                 return result;
             }
             tr.commit();

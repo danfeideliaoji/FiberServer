@@ -6,6 +6,7 @@
 #include<atomic>
 #include<cassert>
 #include<cstring>
+#include<json/value.h>
 #include<arpa/inet.h>
 #include<netinet/in.h>
 #include<sys/socket.h>
@@ -16,6 +17,8 @@
 #include "FiberServer/scheduler.h"
 #include "FiberServer/fiber.h"
 #include "FiberServer/iomanager.h"
+#include "FiberServer/my/artifact_metadata.h"
+#include "FiberServer/my/mysqlop.h"
 #include "FiberServer/util/hash_util.h"
 
 struct SchedulerStatsSum {
@@ -301,9 +304,116 @@ void test_hmac_vectors() {
     std::cout << "hmac vector test passed" << std::endl;
 }
 
+void test_artifact_metadata_aliases() {
+    Json::Value artifact;
+    artifact["project_name"] = "auth-service";
+    artifact["checksum"] = "abc123";
+    artifact["artifact_name"] = "auth-service.tar.gz";
+    artifact["version"] = "1.2.0";
+    artifact["build_no"] = "104";
+    artifact["artifact_type"] = "application/gzip";
+    artifact["size"] = 4096;
+
+    auto normalized = FiberServer::ArtifactMetadata::FromJson(artifact);
+    assert(normalized.artifact_mode);
+    assert(normalized.owner == "auth-service");
+    assert(normalized.checksum == "abc123");
+    assert(normalized.artifact_name == "auth-service.tar.gz");
+    assert(normalized.storage_name == "1.2.0/104/auth-service.tar.gz");
+    assert(normalized.type == "application/gzip");
+    assert(normalized.size == 4096);
+
+    Json::Value legacy;
+    legacy["username"] = "alice";
+    legacy["md5"] = "def456";
+    legacy["filename"] = "sample.txt";
+    legacy["type"] = "text/plain";
+    legacy["size"] = 12;
+
+    auto legacy_normalized = FiberServer::ArtifactMetadata::FromJson(legacy);
+    assert(!legacy_normalized.artifact_mode);
+    assert(legacy_normalized.owner == "alice");
+    assert(legacy_normalized.checksum == "def456");
+    assert(legacy_normalized.artifact_name == "sample.txt");
+    assert(legacy_normalized.storage_name == "sample.txt");
+    assert(legacy_normalized.type == "text/plain");
+    assert(legacy_normalized.size == 12);
+
+    std::cout << "artifact metadata aliases test passed" << std::endl;
+}
+
+void test_artifact_info_contract() {
+    FiberServer::ArtifactInfo info;
+    info.project_name = "auth-service";
+    info.version = "1.2.0";
+    info.build_no = "104";
+    info.artifact_name = "auth-service.tar.gz";
+    info.checksum = "abc123";
+    info.file_id = "group1/M00/00/00/example";
+    info.size = 4096;
+    info.artifact_type = "application/gzip";
+
+    assert(info.project_name == "auth-service");
+    assert(info.version == "1.2.0");
+    assert(info.build_no == "104");
+    assert(info.artifact_name == "auth-service.tar.gz");
+    assert(info.checksum == "abc123");
+
+    bool (*create_artifact)(FiberServer::SociDB::ptr, const FiberServer::ArtifactInfo&) =
+        &FiberServer::artifact_info::CreateArtifact;
+    std::shared_ptr<FiberServer::ArtifactInfo> (*get_artifact)(
+        FiberServer::SociDB::ptr,
+        const std::string&,
+        const std::string&,
+        const std::string&,
+        const std::string&) = &FiberServer::artifact_info::GetArtifact;
+    bool (*delete_artifact)(
+        FiberServer::SociDB::ptr,
+        const std::string&,
+        const std::string&,
+        const std::string&,
+        const std::string&) = &FiberServer::artifact_info::DeleteArtifact;
+    std::shared_ptr<FiberServer::ArtifactInfo> (*latest_artifact)(
+        FiberServer::SociDB::ptr,
+        const std::string&) = &FiberServer::artifact_info::GetLatestArtifact;
+    std::vector<std::string> (*versions_by_project)(
+        FiberServer::SociDB::ptr,
+        const std::string&) = &FiberServer::artifact_info::GetVersionsByProject;
+    std::vector<std::string> (*builds_by_version)(
+        FiberServer::SociDB::ptr,
+        const std::string&,
+        const std::string&) = &FiberServer::artifact_info::GetBuildsByVersion;
+
+    assert(create_artifact != nullptr);
+    assert(get_artifact != nullptr);
+    assert(delete_artifact != nullptr);
+    assert(latest_artifact != nullptr);
+    assert(versions_by_project != nullptr);
+    assert(builds_by_version != nullptr);
+    std::cout << "artifact info contract test passed" << std::endl;
+}
+
+void test_project_token_contract() {
+    bool (*create_token)(
+        FiberServer::SociDB::ptr,
+        const std::string&,
+        const std::string&) = &FiberServer::project_token::CreateOrUpdateToken;
+    bool (*validate_token)(
+        FiberServer::SociDB::ptr,
+        const std::string&,
+        const std::string&) = &FiberServer::project_token::ValidateToken;
+
+    assert(create_token != nullptr);
+    assert(validate_token != nullptr);
+    std::cout << "project token contract test passed" << std::endl;
+}
+
 int main(){
    FiberServer::Thread::SetName("main");
    test_hmac_vectors();
+   test_artifact_metadata_aliases();
+   test_artifact_info_contract();
+   test_project_token_contract();
    test_gmp_scheduler();
    test_gmp_batch_stealing();
    test_iomanager_sleep_timer();

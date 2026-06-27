@@ -1,7 +1,9 @@
 #include "deletefile_servlet.h"
+#include "FiberServer/servlets/artifact_auth.h"
 #include "FiberServer/base/util.h"
 #include "FiberServer/base/log.h"
 #include "FiberServer/db/db_executor.h"
+#include "FiberServer/my/artifact_metadata.h"
 #include "FiberServer/my/mysqlop.h"
 #include "FiberServer/my/fastdfs.h"
 #include "FiberServer/util/perf_util.h"
@@ -32,10 +34,15 @@ int32_t DeleteFileServlet::handle(http::HttpRequest::ptr request
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"parse body failed\"}", OtherError));
             return -1;
         }
-        std::string username = JsonUtil::GetString(json, "user");
-        std::string file_name = JsonUtil::GetString(json, "file_name");
+        auto meta = ArtifactMetadata::FromJson(json);
+        std::string username = meta.owner;
+        std::string file_name = meta.storage_name;
+        bool artifact_request = request->getPath() == "/api/artifacts/delete";
         if(username.empty() || file_name.empty()){
-            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"username, file_name are required\"}", OtherError));
+            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/user, artifact_name/file_name are required\"}", OtherError));
+            return -1;
+        }
+        if(!RequireArtifactToken(request, meta, response)) {
             return -1;
         }
         PerfTimer db_timer;
@@ -46,40 +53,79 @@ int32_t DeleteFileServlet::handle(http::HttpRequest::ptr request
             std::string file_id;
             std::string message;
         };
-        auto db_result = DbExecutorMgr::GetInstance()->submit([username, file_name]() {
+        auto db_result = DbExecutorMgr::GetInstance()->submit([username, file_name, meta, artifact_request]() {
             DbResult result;
             SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
             if(!mysql){
                 result.message = "mysql connection error";
                 return result;
             }
-            auto fileInfo = file_info::GetFileByUserAndFilename(mysql, username, file_name);
-            if(!fileInfo){
-                result.not_found = true;
-                result.message = "file not found";
-                return result;
+            if(artifact_request) {
+                // artifact 删除按制品坐标定位，先删除 artifact_info，再处理兼容旧 file_info 的逻辑记录。
+                auto artifact = artifact_info::GetArtifact(mysql, meta.owner, meta.version,
+                                                           meta.build_no, meta.artifact_name);
+                if(!artifact) {
+                    result.not_found = true;
+                    result.message = "artifact not found";
+                    return result;
+                }
+                soci::transaction tr(mysql->session());
+                if(!artifact_info::DeleteArtifact(mysql, meta.owner, meta.version,
+                                                  meta.build_no, meta.artifact_name)) {
+                    tr.rollback();
+                    result.message = "delete artifact metadata failed";
+                    return result;
+                }
+                if(!file_info::DeleteFileRecordByUserAndFilename(mysql, username, file_name)){
+                    tr.rollback();
+                    result.message = "delete file record failed";
+                    return result;
+                }
+                // 物理文件可能被多个项目共享，只有引用计数归零才删除 shared 记录和 FastDFS 文件。
+                int ref = file_shared::DecrementRef(mysql, artifact->checksum);
+                if(ref < 0) {
+                    tr.rollback();
+                    result.message = "decrement shared ref failed";
+                    return result;
+                }
+                if(ref == 0 && !file_shared::DeleteShared(mysql, artifact->checksum)) {
+                    tr.rollback();
+                    result.message = "delete shared record failed";
+                    return result;
+                }
+                tr.commit();
+                result.ok = true;
+                result.delete_physical = ref == 0;
+                result.file_id = artifact->file_id;
+            } else {
+                auto fileInfo = file_info::GetFileByUserAndFilename(mysql, username, file_name);
+                if(!fileInfo){
+                    result.not_found = true;
+                    result.message = "file not found";
+                    return result;
+                }
+                soci::transaction tr(mysql->session());
+                if(!file_info::DeleteFileRecordByUserAndFilename(mysql, username, file_name)){
+                    tr.rollback();
+                    result.message = "delete db record failed";
+                    return result;
+                }
+                int ref = file_shared::DecrementRef(mysql, fileInfo->md5);
+                if(ref < 0) {
+                    tr.rollback();
+                    result.message = "decrement shared ref failed";
+                    return result;
+                }
+                if(ref == 0 && !file_shared::DeleteShared(mysql, fileInfo->md5)) {
+                    tr.rollback();
+                    result.message = "delete shared record failed";
+                    return result;
+                }
+                tr.commit();
+                result.ok = true;
+                result.delete_physical = ref == 0;
+                result.file_id = fileInfo->file_id;
             }
-            soci::transaction tr(mysql->session());
-            if(!file_info::DeleteFileRecordByUserAndFilename(mysql, username, file_name)){
-                tr.rollback();
-                result.message = "delete db record failed";
-                return result;
-            }
-            int ref = file_shared::DecrementRef(mysql, fileInfo->md5);
-            if(ref < 0) {
-                tr.rollback();
-                result.message = "decrement shared ref failed";
-                return result;
-            }
-            if(ref == 0 && !file_shared::DeleteShared(mysql, fileInfo->md5)) {
-                tr.rollback();
-                result.message = "delete shared record failed";
-                return result;
-            }
-            tr.commit();
-            result.ok = true;
-            result.delete_physical = ref == 0;
-            result.file_id = fileInfo->file_id;
             return result;
         });
         perf.addDbMs(db_timer.elapsedMs());

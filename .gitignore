@@ -16,3 +16,5 @@ logs/
 *.o
 *.so
 *.a
+docs/FiberServer_100_Interview_QA.md
+docs/Backend_AI_Interview_300_Questions.md

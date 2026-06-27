@@ -33,6 +33,22 @@ struct FileInfo {
     time_t update_time;
 };
 
+struct ArtifactInfo {
+    int64_t id = 0;
+    std::string project_name;
+    std::string version;
+    std::string build_no;
+    std::string artifact_name;
+    std::string checksum;
+    std::string file_id;
+    int64_t size = 0;
+    std::string artifact_type;
+    std::string branch;
+    std::string commit_id;
+    time_t create_time = 0;
+    time_t update_time = 0;
+};
+
 namespace user_info {
 
 bool CreateUser(SociDB::ptr db, const std::string& username,
@@ -75,6 +91,44 @@ bool IncrementCount(SociDB::ptr db, const std::string& md5);
 int DecrementCount(SociDB::ptr db, const std::string& file_id);
 std::vector<std::shared_ptr<FileInfo>> GetFileList(SociDB::ptr db, int offset, int limit);
 std::vector<std::shared_ptr<FileInfo>> GetFileListByUser(SociDB::ptr db, const std::string& user, int offset, int limit);
+
+}
+
+namespace artifact_info {
+
+bool CreateArtifact(SociDB::ptr db, const ArtifactInfo& artifact);
+std::shared_ptr<ArtifactInfo> GetArtifact(SociDB::ptr db,
+                                          const std::string& project_name,
+                                          const std::string& version,
+                                          const std::string& build_no,
+                                          const std::string& artifact_name);
+bool DeleteArtifact(SociDB::ptr db,
+                    const std::string& project_name,
+                    const std::string& version,
+                    const std::string& build_no,
+                    const std::string& artifact_name);
+std::vector<std::shared_ptr<ArtifactInfo>> GetArtifactsByProject(SociDB::ptr db,
+                                                                 const std::string& project_name,
+                                                                 int offset,
+                                                                 int limit);
+std::shared_ptr<ArtifactInfo> GetLatestArtifact(SociDB::ptr db,
+                                                const std::string& project_name);
+std::vector<std::string> GetVersionsByProject(SociDB::ptr db,
+                                              const std::string& project_name);
+std::vector<std::string> GetBuildsByVersion(SociDB::ptr db,
+                                            const std::string& project_name,
+                                            const std::string& version);
+
+}
+
+namespace project_token {
+
+bool CreateOrUpdateToken(SociDB::ptr db,
+                         const std::string& project_name,
+                         const std::string& token);
+bool ValidateToken(SociDB::ptr db,
+                   const std::string& project_name,
+                   const std::string& token);
 
 }
 
