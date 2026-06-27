@@ -2,6 +2,7 @@
 #include "FiberServer/base/log.h"
 #include "FiberServer/base/util.h"
 #include "FiberServer/db/db_executor.h"
+#include "FiberServer/my/artifact_metadata.h"
 #include "FiberServer/my/mysqlop.h"
 #include "FiberServer/util/perf_util.h"
 #include <json/value.h>
@@ -30,9 +31,10 @@ int32_t MyFilesServlet::handle(http::HttpRequest::ptr request,
             return 0;
         }
 
-        std::string username = JsonUtil::GetString(json, "username");
+        auto request_meta = ArtifactMetadata::FromJson(json);
+        std::string username = request_meta.owner;
         if (username.empty()) {
-            response->setBody("{\"code\":1,\"msg\":\"username is required\"}");
+            response->setBody("{\"code\":1,\"msg\":\"project_name/username is required\"}");
             return 0;
         }
         int offset = JsonUtil::GetInt32(json, "offset", 0);
@@ -46,19 +48,25 @@ int32_t MyFilesServlet::handle(http::HttpRequest::ptr request,
             limit = 1000;
         }
 
+        bool artifact_request = request->getPath() == "/api/artifacts/list";
         PerfTimer db_timer;
         struct DbResult {
             bool ok = false;
             std::vector<std::shared_ptr<FileInfo>> files;
+            std::vector<std::shared_ptr<ArtifactInfo>> artifacts;
         };
-        auto db_result = DbExecutorMgr::GetInstance()->submit([username, offset, limit]() {
+        auto db_result = DbExecutorMgr::GetInstance()->submit([username, offset, limit, artifact_request]() {
             DbResult result;
             SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
             if (!mysql) {
                 return result;
             }
             result.ok = true;
-            result.files = file_info::GetFileListByUser(mysql, username, offset, limit);
+            if (artifact_request) {
+                result.artifacts = artifact_info::GetArtifactsByProject(mysql, username, offset, limit);
+            } else {
+                result.files = file_info::GetFileListByUser(mysql, username, offset, limit);
+            }
             return result;
         });
         if (!db_result.ok) {
@@ -68,7 +76,6 @@ int32_t MyFilesServlet::handle(http::HttpRequest::ptr request,
             return 0;
         }
 
-        auto files = db_result.files;
         perf.addDbMs(db_timer.elapsedMs());
         
         Json::Value result;
@@ -77,8 +84,29 @@ int32_t MyFilesServlet::handle(http::HttpRequest::ptr request,
         result["offset"] = offset;
         result["limit"] = limit;
         
-        Json::Value filesArray(Json::arrayValue);
-        for (const auto& file : files) {
+        if (artifact_request) {
+            Json::Value artifactsArray(Json::arrayValue);
+            for (const auto& artifact : db_result.artifacts) {
+                Json::Value artifactJson;
+                artifactJson["id"] = artifact->id;
+                artifactJson["file_id"] = artifact->file_id;
+                artifactJson["project_name"] = artifact->project_name;
+                artifactJson["checksum"] = artifact->checksum;
+                artifactJson["artifact_name"] = artifact->artifact_name;
+                artifactJson["storage_name"] = ArtifactMetadata::BuildStorageName(
+                    artifact->artifact_name, artifact->version, artifact->build_no);
+                artifactJson["version"] = artifact->version;
+                artifactJson["build_no"] = artifact->build_no;
+                artifactJson["branch"] = artifact->branch;
+                artifactJson["commit_id"] = artifact->commit_id;
+                artifactJson["size"] = artifact->size;
+                artifactJson["artifact_type"] = artifact->artifact_type;
+                artifactsArray.append(artifactJson);
+            }
+            result["artifacts"] = artifactsArray;
+        } else {
+            Json::Value filesArray(Json::arrayValue);
+            for (const auto& file : db_result.files) {
             Json::Value fileJson;
             fileJson["id"] = file->id;
             fileJson["file_id"] = file->file_id;
@@ -87,9 +115,9 @@ int32_t MyFilesServlet::handle(http::HttpRequest::ptr request,
             fileJson["type"] = file->type;
             fileJson["filename"] = file->filename;
             filesArray.append(fileJson);
+            }
+            result["files"] = filesArray;
         }
-        
-        result["files"] = filesArray;
         response->setBody(JsonUtil::ToString(result));
         perf.setStatus("ok");
         return 0;

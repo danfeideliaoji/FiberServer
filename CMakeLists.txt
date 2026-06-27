@@ -61,7 +61,7 @@ set(LIB_SRCS
     FiberServer/servlets/myfiles_servlet.cpp FiberServer/servlets/md5_servlet.cpp FiberServer/servlets/download_servlet.cpp
     FiberServer/servlets/deletefile_servlet.cpp
     FiberServer/util/json_util.cpp FiberServer/util/hash_util.cpp
-    FiberServer/my/chunkManager.cpp FiberServer/my/fastdfs.cpp
+    FiberServer/my/artifact_metadata.cpp FiberServer/my/chunkManager.cpp FiberServer/my/fastdfs.cpp
     FiberServer/my/application.cpp
 )
 
@@ -120,6 +120,9 @@ target_link_libraries(fiberserver PUBLIC ${SOCI_LINK_TARGETS})
 
 add_executable(test FiberServer/tests/test.cpp) 
 target_link_libraries(test fiberserver)
+
+add_executable(artifact_metadata_contract FiberServer/tests/artifact_metadata_contract.cpp)
+target_include_directories(artifact_metadata_contract PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(server_main FiberServer/tests/server_main.cpp)
 target_link_libraries(server_main fiberserver)

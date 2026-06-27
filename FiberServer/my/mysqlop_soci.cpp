@@ -37,6 +37,24 @@ static std::shared_ptr<FileInfo> FileInfoFromRow(const soci::row& row) {
     return info;
 }
 
+static std::shared_ptr<ArtifactInfo> ArtifactInfoFromRow(const soci::row& row) {
+    std::shared_ptr<ArtifactInfo> info(new ArtifactInfo());
+    info->id = row.get<long long>("id");
+    info->project_name = row.get<std::string>("project_name");
+    info->version = row.get<std::string>("version", "");
+    info->build_no = row.get<std::string>("build_no", "");
+    info->artifact_name = row.get<std::string>("artifact_name");
+    info->checksum = row.get<std::string>("checksum");
+    info->file_id = row.get<std::string>("file_id");
+    info->size = row.get<long long>("size");
+    info->artifact_type = row.get<std::string>("artifact_type", "");
+    info->branch = row.get<std::string>("branch", "");
+    info->commit_id = row.get<std::string>("commit_id", "");
+    info->create_time = 0;
+    info->update_time = 0;
+    return info;
+}
+
 namespace user_info {
 
 bool CreateUser(SociDB::ptr db, const std::string& username,
@@ -643,6 +661,158 @@ bool IncrementCount(SociDB::ptr db, const std::string& md5) {
         FIBER_LOG_ERROR(g_logger) << "SOCI IncrementCount error: " << e.what();
         return false;
     }
+}
+
+}
+
+namespace artifact_info {
+
+static bool EnsureArtifactTable(SociDB::ptr db) {
+    if (!db) {
+        return false;
+    }
+    try {
+        db->session() << "CREATE TABLE IF NOT EXISTS artifact_info ("
+                         "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+                         "project_name VARCHAR(128) NOT NULL, "
+                         "version VARCHAR(128) NOT NULL DEFAULT '', "
+                         "build_no VARCHAR(128) NOT NULL DEFAULT '', "
+                         "artifact_name VARCHAR(256) NOT NULL, "
+                         "checksum VARCHAR(128) NOT NULL, "
+                         "file_id VARCHAR(512) NOT NULL, "
+                         "size BIGINT NOT NULL DEFAULT 0, "
+                         "artifact_type VARCHAR(128) NOT NULL DEFAULT '', "
+                         "branch VARCHAR(128) NOT NULL DEFAULT '', "
+                         "commit_id VARCHAR(128) NOT NULL DEFAULT '', "
+                         "create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                         "update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
+                         "UNIQUE KEY uk_project_version_build_name (project_name, version, build_no, artifact_name), "
+                         "INDEX idx_project_id (project_name, id), "
+                         "INDEX idx_project_version (project_name, version), "
+                         "INDEX idx_checksum (checksum), "
+                         "INDEX idx_file_id (file_id)"
+                         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI EnsureArtifactTable error: " << e.what();
+        return false;
+    }
+}
+
+bool CreateArtifact(SociDB::ptr db, const ArtifactInfo& artifact) {
+    if (!EnsureArtifactTable(db)) {
+        return false;
+    }
+
+    try {
+        db->session() << "INSERT INTO artifact_info "
+                         "(project_name, version, build_no, artifact_name, checksum, file_id, "
+                         "size, artifact_type, branch, commit_id) "
+                         "VALUES (:project_name, :version, :build_no, :artifact_name, :checksum, :file_id, "
+                         ":size, :artifact_type, :branch, :commit_id) "
+                         "ON DUPLICATE KEY UPDATE "
+                         "checksum = VALUES(checksum), file_id = VALUES(file_id), size = VALUES(size), "
+                         "artifact_type = VALUES(artifact_type), branch = VALUES(branch), "
+                         "commit_id = VALUES(commit_id), update_time = CURRENT_TIMESTAMP",
+                         soci::use(artifact.project_name, "project_name"),
+                         soci::use(artifact.version, "version"),
+                         soci::use(artifact.build_no, "build_no"),
+                         soci::use(artifact.artifact_name, "artifact_name"),
+                         soci::use(artifact.checksum, "checksum"),
+                         soci::use(artifact.file_id, "file_id"),
+                         soci::use(artifact.size, "size"),
+                         soci::use(artifact.artifact_type, "artifact_type"),
+                         soci::use(artifact.branch, "branch"),
+                         soci::use(artifact.commit_id, "commit_id");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI CreateArtifact error: " << e.what();
+        return false;
+    }
+}
+
+std::shared_ptr<ArtifactInfo> GetArtifact(SociDB::ptr db,
+                                          const std::string& project_name,
+                                          const std::string& version,
+                                          const std::string& build_no,
+                                          const std::string& artifact_name) {
+    if (!EnsureArtifactTable(db)) {
+        return nullptr;
+    }
+
+    try {
+        auto& sql = db->session();
+        soci::row row;
+        sql << "SELECT id, project_name, version, build_no, artifact_name, checksum, file_id, "
+               "size, artifact_type, branch, commit_id, create_time, update_time "
+               "FROM artifact_info WHERE project_name = :project_name AND version = :version "
+               "AND build_no = :build_no AND artifact_name = :artifact_name LIMIT 1",
+               soci::use(project_name, "project_name"),
+               soci::use(version, "version"),
+               soci::use(build_no, "build_no"),
+               soci::use(artifact_name, "artifact_name"),
+               soci::into(row);
+        if (!sql.got_data()) {
+            return nullptr;
+        }
+        return ArtifactInfoFromRow(row);
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetArtifact error: " << e.what();
+        return nullptr;
+    }
+}
+
+bool DeleteArtifact(SociDB::ptr db,
+                    const std::string& project_name,
+                    const std::string& version,
+                    const std::string& build_no,
+                    const std::string& artifact_name) {
+    if (!EnsureArtifactTable(db)) {
+        return false;
+    }
+
+    try {
+        db->session() << "DELETE FROM artifact_info WHERE project_name = :project_name "
+                         "AND version = :version AND build_no = :build_no "
+                         "AND artifact_name = :artifact_name",
+                         soci::use(project_name, "project_name"),
+                         soci::use(version, "version"),
+                         soci::use(build_no, "build_no"),
+                         soci::use(artifact_name, "artifact_name");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI DeleteArtifact error: " << e.what();
+        return false;
+    }
+}
+
+std::vector<std::shared_ptr<ArtifactInfo>> GetArtifactsByProject(SociDB::ptr db,
+                                                                 const std::string& project_name,
+                                                                 int offset,
+                                                                 int limit) {
+    std::vector<std::shared_ptr<ArtifactInfo>> artifacts;
+    if (!EnsureArtifactTable(db)) {
+        return artifacts;
+    }
+
+    try {
+        auto& sql = db->session();
+        soci::rowset<soci::row> rows =
+            (sql.prepare << "SELECT id, project_name, version, build_no, artifact_name, checksum, file_id, "
+                            "size, artifact_type, branch, commit_id, create_time, update_time "
+                            "FROM artifact_info FORCE INDEX (idx_project_id) "
+                            "WHERE project_name = :project_name ORDER BY id DESC LIMIT :limit OFFSET :offset",
+                            soci::use(project_name, "project_name"),
+                            soci::use(limit, "limit"),
+                            soci::use(offset, "offset"));
+        for (const auto& row : rows) {
+            artifacts.push_back(ArtifactInfoFromRow(row));
+        }
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetArtifactsByProject error: " << e.what();
+    }
+
+    return artifacts;
 }
 
 }

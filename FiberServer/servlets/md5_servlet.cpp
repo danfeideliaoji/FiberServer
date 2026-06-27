@@ -1,5 +1,6 @@
 #include "md5_servlet.h"
 #include "FiberServer/db/db_executor.h"
+#include "FiberServer/my/artifact_metadata.h"
 #include "FiberServer/my/mysqlop.h"
 #include "FiberServer/base/log.h"
 #include "FiberServer/util/perf_util.h"
@@ -34,12 +35,13 @@ int32_t Md5Servlet::handle(http::HttpRequest::ptr request
             return -1;
         }
         
-        std::string username = JsonUtil::GetString(json, "username");
-        std::string md5 = JsonUtil::GetString(json, "md5");
-        std::string filename = JsonUtil::GetString(json, "filename");
-        
+        auto meta = ArtifactMetadata::FromJson(json);
+        std::string username = meta.owner;
+        std::string md5 = meta.checksum;
+        std::string filename = meta.storage_name;
+
         if (username.empty() || md5.empty()) {
-            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"username, md5 are required\"}", OtherError));
+            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/username, checksum/md5 are required\"}", OtherError));
             return -1;
         }
         

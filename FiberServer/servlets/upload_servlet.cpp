@@ -3,6 +3,7 @@
 #include "FiberServer/base/log.h"
 #include "FiberServer/base/util.h"
 #include "FiberServer/db/db_executor.h"
+#include "FiberServer/my/artifact_metadata.h"
 #include "FiberServer/my/mysqlop.h"
 #include "FiberServer/my/chunkManager.h"
 #include "FiberServer/util/perf_util.h"
@@ -19,6 +20,22 @@ enum UploadCode{
     chunk = 2,
     OtherError = 3,
 };
+
+static ArtifactInfo BuildArtifactInfo(const ArtifactMetadata& meta, const std::string& file_id) {
+    ArtifactInfo artifact;
+    artifact.project_name = meta.owner;
+    artifact.version = meta.version;
+    artifact.build_no = meta.build_no;
+    artifact.artifact_name = meta.artifact_name;
+    artifact.checksum = meta.checksum;
+    artifact.file_id = file_id;
+    artifact.size = meta.size;
+    artifact.artifact_type = meta.type;
+    artifact.branch = meta.branch;
+    artifact.commit_id = meta.commit_id;
+    return artifact;
+}
+
 int32_t UploadServlet::handle(http::HttpRequest::ptr request
                , http::HttpResponse::ptr response
                , http::HttpSession::ptr session) {
@@ -32,12 +49,13 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"json parse error\"}", OtherError));
             return -1;
         }
-        std::string username = JsonUtil::GetString(json, "username");
-        std::string md5 = JsonUtil::GetString(json, "md5");
-        std::string filename = JsonUtil::GetString(json, "filename");
-        int64_t size = JsonUtil::GetInt64(json, "size");
+        auto meta = ArtifactMetadata::FromJson(json);
+        std::string username = meta.owner;
+        std::string md5 = meta.checksum;
+        std::string filename = meta.storage_name;
+        int64_t size = meta.size;
         if(username.empty() || md5.empty() || size <= 0) {
-            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"username, md5, size required\"}", OtherError));
+            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/username, checksum/md5, size required\"}", OtherError));
             return -1;
         }
         PerfTimer db_timer;
@@ -46,7 +64,7 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
             std::string status;
             std::string message;
         };
-        auto db_result = DbExecutorMgr::GetInstance()->submit([username, md5, filename, size]() {
+        auto db_result = DbExecutorMgr::GetInstance()->submit([username, md5, filename, size, meta]() {
             DbResult result;
             SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
             if(!mysql){
@@ -54,7 +72,26 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
                 result.message = "mysql connection error";
                 return result;
             }
+            if(meta.artifact_mode) {
+                auto artifact = artifact_info::GetArtifact(mysql, meta.owner, meta.version,
+                                                           meta.build_no, meta.artifact_name);
+                if(artifact) {
+                    result.code = Success;
+                    result.status = "artifact_existing";
+                    result.message = "artifact already exists";
+                    return result;
+                }
+            }
             if(file_info::ExistsByMd5AndUser(mysql, md5, username)){
+                if(meta.artifact_mode) {
+                    auto file_id = file_shared::GetFileIdByMd5(mysql, md5);
+                    if(file_id.empty() ||
+                       !artifact_info::CreateArtifact(mysql, BuildArtifactInfo(meta, file_id))) {
+                        result.code = OtherError;
+                        result.message = "create artifact metadata failed";
+                        return result;
+                    }
+                }
                 result.code = Success;
                 result.status = "instant_existing";
                 result.message = "instant upload success";
@@ -68,6 +105,13 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
                     tr.rollback();
                     result.code = OtherError;
                     result.message = "instant upload db transaction failed";
+                    return result;
+                }
+                if(meta.artifact_mode &&
+                   !artifact_info::CreateArtifact(mysql, BuildArtifactInfo(meta, file_id))) {
+                    tr.rollback();
+                    result.code = OtherError;
+                    result.message = "create artifact metadata failed";
                     return result;
                 }
                 tr.commit();

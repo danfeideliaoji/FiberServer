@@ -29,6 +29,14 @@ HttpServer::HttpServer(bool keepalive
     m_dispatch->addServlet("/api/md5", Servlet::ptr(new Md5Servlet));                     // MD5查询
     m_dispatch->addGlobServlet("/api/download", Servlet::ptr(new DownloadServlet));      // 文件下载
     m_dispatch->addServlet("/api/deletefile", Servlet::ptr(new DeleteFileServlet));         // 删除文件
+    m_dispatch->addServlet("/api/uploadchunk", Servlet::ptr(new ChunkUploadServlet));
+    m_dispatch->addServlet("/api/artifacts/precheck", Servlet::ptr(new UploadServlet));
+    m_dispatch->addServlet("/api/artifacts/upload/direct", Servlet::ptr(new DirUploadServlet));
+    m_dispatch->addServlet("/api/artifacts/upload/chunk", Servlet::ptr(new ChunkUploadServlet));
+    m_dispatch->addServlet("/api/artifacts/list", Servlet::ptr(new MyFilesServlet));
+    m_dispatch->addServlet("/api/artifacts/checksum", Servlet::ptr(new Md5Servlet));
+    m_dispatch->addGlobServlet("/api/artifacts/download", Servlet::ptr(new DownloadServlet));
+    m_dispatch->addServlet("/api/artifacts/delete", Servlet::ptr(new DeleteFileServlet));
 }
 
 void HttpServer::setName(const std::string& v) {

@@ -1,5 +1,6 @@
 #include "dirupload_servlet.h"
 #include "FiberServer/db/db_executor.h"
+#include "FiberServer/my/artifact_metadata.h"
 #include "FiberServer/my/fastdfs.h"
 #include "FiberServer/my/mysqlop.h"
 #include "FiberServer/base/log.h"
@@ -16,6 +17,22 @@ enum DirUploadCode{
     Success = 0,
     OtherError=1,
 };
+
+static ArtifactInfo BuildArtifactInfo(const ArtifactMetadata& meta, const std::string& file_id) {
+    ArtifactInfo artifact;
+    artifact.project_name = meta.owner;
+    artifact.version = meta.version;
+    artifact.build_no = meta.build_no;
+    artifact.artifact_name = meta.artifact_name;
+    artifact.checksum = meta.checksum;
+    artifact.file_id = file_id;
+    artifact.size = meta.size;
+    artifact.artifact_type = meta.type;
+    artifact.branch = meta.branch;
+    artifact.commit_id = meta.commit_id;
+    return artifact;
+}
+
 static std::map<std::string, std::string> parseQuery(const std::string& query) {
     std::map<std::string, std::string> m;
     size_t pos = 0;
@@ -38,14 +55,15 @@ int32_t DirUploadServlet::handle(http::HttpRequest::ptr request
     response->setHeader("Content-Type", "text/json charset=utf-8");
 
     auto params = parseQuery(request->getQuery());
-    std::string username = params["username"];
-    std::string md5 = params["md5"];
-    std::string filename = params["filename"];
+    auto meta = ArtifactMetadata::FromParams(params);
+    std::string username = meta.owner;
+    std::string md5 = meta.checksum;
+    std::string filename = meta.storage_name;
     // FIBER_LOG_INFO(g_logger)<<"accept filename"<<filename;
-    int64_t size = atoll(params["size"].c_str());
-    std::string type = params["type"];
+    int64_t size = meta.size;
+    std::string type = meta.type;
     if(username.empty() || md5.empty() || size <= 0 || type.empty()) {
-        response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"username, md5, size, type required\"}", OtherError));
+        response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/username, checksum/md5, size, artifact_type/type required\"}", OtherError));
         return -1;
     }
     
@@ -70,7 +88,7 @@ int32_t DirUploadServlet::handle(http::HttpRequest::ptr request
         bool ok = false;
         std::string message;
     };
-    auto db_result = DbExecutorMgr::GetInstance()->submit([md5, file_id, username, filename, size, type]() {
+    auto db_result = DbExecutorMgr::GetInstance()->submit([md5, file_id, username, filename, size, type, meta]() {
         DbResult result;
         SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
         if(!mysql){
@@ -86,6 +104,12 @@ int32_t DirUploadServlet::handle(http::HttpRequest::ptr request
         if(!file_shared::CreateShared(mysql, md5, file_id, size)) {
             tr.rollback();
             result.message = "create shared file record failed";
+            return result;
+        }
+        if(meta.artifact_mode &&
+           !artifact_info::CreateArtifact(mysql, BuildArtifactInfo(meta, file_id))) {
+            tr.rollback();
+            result.message = "create artifact metadata failed";
             return result;
         }
         tr.commit();

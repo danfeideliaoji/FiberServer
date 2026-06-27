@@ -37,6 +37,14 @@ json_file_id_by_name() {
     python3 -c 'import json,sys; name=sys.argv[1]; data=json.load(sys.stdin); files=data.get("files") or []; print(next((f.get("file_id","") for f in files if f.get("filename") == name), ""))' "$1"
 }
 
+json_artifact_file_id_by_name() {
+    python3 -c 'import json,sys; name=sys.argv[1]; data=json.load(sys.stdin); artifacts=data.get("artifacts") or []; print(next((f.get("file_id","") for f in artifacts if f.get("artifact_name") == name), ""))' "$1"
+}
+
+json_artifact_field_by_name() {
+    python3 -c 'import json,sys; name=sys.argv[1]; field=sys.argv[2]; data=json.load(sys.stdin); artifacts=data.get("artifacts") or []; print(next((f.get(field,"") for f in artifacts if f.get("artifact_name") == name), ""))' "$1" "$2"
+}
+
 json_field() {
     python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1], ""))' "$1"
 }
@@ -184,6 +192,55 @@ fi
 delete_instant_body="$(printf '{"user":"%s","file_name":"%s"}' "$SECOND_USER_NAME" "$INSTANT_FILE_NAME")"
 delete_instant_response="$(curl -fsS -H 'Content-Type: application/json' -d "$delete_instant_body" "${BASE_URL}/api/deletefile")"
 assert_code "delete instant file" "0" "$delete_instant_response"
+
+ARTIFACT_PROJECT="artifact-${USER_NAME}"
+ARTIFACT_VERSION="1.0.0"
+ARTIFACT_BUILD_NO="build-${USER_NAME}"
+ARTIFACT_BRANCH="main"
+ARTIFACT_COMMIT_ID="commit-${USER_NAME}"
+ARTIFACT_NAME="server-${USER_NAME}.tar.gz"
+ARTIFACT_TYPE="application/gzip"
+ARTIFACT_CONTENT="fiber artifact e2e ${USER_NAME}"
+ARTIFACT_CHECKSUM="$(printf '%s' "$ARTIFACT_CONTENT" | md5sum | awk '{print $1}')"
+ARTIFACT_SIZE="$(printf '%s' "$ARTIFACT_CONTENT" | wc -c | awk '{print $1}')"
+ENCODED_ARTIFACT_NAME="$(urlencode "$ARTIFACT_NAME")"
+ENCODED_ARTIFACT_TYPE="$(urlencode "$ARTIFACT_TYPE")"
+
+artifact_precheck_body="$(printf '{"project_name":"%s","checksum":"%s","artifact_name":"%s","version":"%s","build_no":"%s","branch":"%s","commit_id":"%s","size":%s}' "$ARTIFACT_PROJECT" "$ARTIFACT_CHECKSUM" "$ARTIFACT_NAME" "$ARTIFACT_VERSION" "$ARTIFACT_BUILD_NO" "$ARTIFACT_BRANCH" "$ARTIFACT_COMMIT_ID" "$ARTIFACT_SIZE")"
+artifact_precheck_response="$(curl -fsS -H 'Content-Type: application/json' -d "$artifact_precheck_body" "${BASE_URL}/api/artifacts/precheck")"
+assert_code "artifact precheck" "1" "$artifact_precheck_response"
+
+artifact_upload_url="${BASE_URL}/api/artifacts/upload/direct?project_name=${ARTIFACT_PROJECT}&checksum=${ARTIFACT_CHECKSUM}&artifact_name=${ENCODED_ARTIFACT_NAME}&version=${ARTIFACT_VERSION}&build_no=${ARTIFACT_BUILD_NO}&branch=${ARTIFACT_BRANCH}&commit_id=${ARTIFACT_COMMIT_ID}&size=${ARTIFACT_SIZE}&artifact_type=${ENCODED_ARTIFACT_TYPE}"
+artifact_upload_response="$(printf '%s' "$ARTIFACT_CONTENT" | curl -fsS -H "Content-Type: ${ARTIFACT_TYPE}" --data-binary @- "$artifact_upload_url")"
+assert_code "artifact direct upload" "0" "$artifact_upload_response"
+
+artifact_list_body="$(printf '{"project_name":"%s"}' "$ARTIFACT_PROJECT")"
+artifact_list_response="$(curl -fsS -H 'Content-Type: application/json' -d "$artifact_list_body" "${BASE_URL}/api/artifacts/list")"
+assert_code "artifact list" "0" "$artifact_list_response"
+artifact_file_id="$(printf '%s' "$artifact_list_response" | json_artifact_file_id_by_name "$ARTIFACT_NAME")"
+if [[ -z "$artifact_file_id" ]]; then
+    echo "artifact list failed: uploaded artifact was not listed" >&2
+    echo "$artifact_list_response" >&2
+    exit 1
+fi
+artifact_branch="$(printf '%s' "$artifact_list_response" | json_artifact_field_by_name "$ARTIFACT_NAME" branch)"
+artifact_commit_id="$(printf '%s' "$artifact_list_response" | json_artifact_field_by_name "$ARTIFACT_NAME" commit_id)"
+if [[ "$artifact_branch" != "$ARTIFACT_BRANCH" || "$artifact_commit_id" != "$ARTIFACT_COMMIT_ID" ]]; then
+    echo "artifact list failed: branch/commit_id metadata mismatch" >&2
+    echo "$artifact_list_response" >&2
+    exit 1
+fi
+
+artifact_headers="$(curl -fsSI "${DOWNLOAD_HEADER_BASE_URL}/api/artifacts/download?project_name=${ARTIFACT_PROJECT}&artifact_name=${ENCODED_ARTIFACT_NAME}&version=${ARTIFACT_VERSION}&build_no=${ARTIFACT_BUILD_NO}")"
+if ! printf '%s\n' "$artifact_headers" | grep -qi '^X-Accel-Redirect:'; then
+    echo "artifact download failed: missing X-Accel-Redirect header" >&2
+    printf '%s\n' "$artifact_headers" >&2
+    exit 1
+fi
+
+artifact_delete_body="$(printf '{"project_name":"%s","artifact_name":"%s","version":"%s","build_no":"%s"}' "$ARTIFACT_PROJECT" "$ARTIFACT_NAME" "$ARTIFACT_VERSION" "$ARTIFACT_BUILD_NO")"
+artifact_delete_response="$(curl -fsS -H 'Content-Type: application/json' -d "$artifact_delete_body" "${BASE_URL}/api/artifacts/delete")"
+assert_code "artifact delete" "0" "$artifact_delete_response"
 
 CHUNK_FILE="${TMP_DIR}/${CHUNK_FILE_NAME}"
 python3 -c 'from pathlib import Path; import sys; size = 6 * 1024 * 1024 + 123; pattern = f"FiberServer chunk e2e {sys.argv[2]}\n".encode(); Path(sys.argv[1]).write_bytes((pattern * (size // len(pattern) + 1))[:size])' "$CHUNK_FILE" "$USER_NAME"

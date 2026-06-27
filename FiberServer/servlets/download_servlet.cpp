@@ -1,5 +1,6 @@
 #include "download_servlet.h"
 #include "FiberServer/db/db_executor.h"
+#include "FiberServer/my/artifact_metadata.h"
 #include "FiberServer/my/mysqlop.h"
 #include "FiberServer/base/log.h"
 #include "FiberServer/util/perf_util.h"
@@ -31,21 +32,30 @@ int32_t DownloadServlet::handle(http::HttpRequest::ptr request
     ScopedPerfLog perf("/api/download");
     std::string s = request->getQuery();
     auto query = parseQuery(s);
-    std::string& user=query["user"];
-    std::string& filename=query["filename"]; 
+    auto meta = ArtifactMetadata::FromParams(query);
+    std::string user = meta.owner;
+    std::string filename = meta.storage_name;
+    std::string download_name = meta.artifact_name.empty() ? filename : meta.artifact_name;
+    bool artifact_request = request->getPath() == "/api/artifacts/download";
     PerfTimer db_timer;
     struct DbResult {
         bool ok = false;
         std::shared_ptr<FileInfo> info;
+        std::shared_ptr<ArtifactInfo> artifact;
     };
-    auto db_result = DbExecutorMgr::GetInstance()->submit([user, filename]() {
+    auto db_result = DbExecutorMgr::GetInstance()->submit([user, filename, meta, artifact_request]() {
         DbResult result;
         SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
         if (!mysql) {
             return result;
         }
         result.ok = true;
-        result.info = file_info::GetFileByUserAndFilename(mysql, user, filename);
+        if (artifact_request) {
+            result.artifact = artifact_info::GetArtifact(mysql, meta.owner, meta.version,
+                                                         meta.build_no, meta.artifact_name);
+        } else {
+            result.info = file_info::GetFileByUserAndFilename(mysql, user, filename);
+        }
         return result;
     });
     if (!db_result.ok) {
@@ -55,9 +65,15 @@ int32_t DownloadServlet::handle(http::HttpRequest::ptr request
         return 0;
     }
 
-    auto info = db_result.info;
+    std::string file_id;
+    if (artifact_request && db_result.artifact) {
+        file_id = db_result.artifact->file_id;
+        download_name = db_result.artifact->artifact_name;
+    } else if (db_result.info) {
+        file_id = db_result.info->file_id;
+    }
     perf.addDbMs(db_timer.elapsedMs());
-    if (!info) {
+    if (file_id.empty()) {
         perf.setStatus("not_found");
         response->setStatus(HttpStatus::NOT_FOUND);
         response->setBody("{\"code\":1,\"msg\":\"file not found\"}");
@@ -65,14 +81,14 @@ int32_t DownloadServlet::handle(http::HttpRequest::ptr request
     }
 
     response->setStatus(HttpStatus::OK);
-    response->setHeader("X-Accel-Redirect", "/" + info->file_id);
+    response->setHeader("X-Accel-Redirect", "/" + file_id);
     response->setHeader("Content-Type", "application/octet-stream");
 
     // URL-encode filename for Content-Disposition (RFC 5987)
     response->setHeader("Content-Disposition",
-        "attachment; filename*=UTF-8''" + filename);
+        "attachment; filename*=UTF-8''" + download_name);
 
-    FIBER_LOG_INFO(g_logger)<<"file id: "<<info->file_id;
+    FIBER_LOG_INFO(g_logger)<<"file id: "<<file_id;
     perf.setStatus("ok");
     return 0;
 }

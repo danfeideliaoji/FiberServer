@@ -70,3 +70,7 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
   -e UPLOAD_CONCURRENCY=3 \
   fiberserver-dev bash scripts/docker_bench_business.sh
 ```
+
+## 构建制品仓库模式
+
+`docs/ARTIFACT_REPOSITORY.md` 说明了当前 CI/CD 构建制品仓库语义，包括独立 `artifact_info` 元数据表、`project_name`、`checksum`、`artifact_name`、`version`、`build_no`、`branch`、`commit_id` 字段，以及 `/api/artifacts/*` 接口别名。
