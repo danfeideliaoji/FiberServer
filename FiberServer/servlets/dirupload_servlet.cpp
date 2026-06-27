@@ -72,6 +72,7 @@ int32_t DirUploadServlet::handle(http::HttpRequest::ptr request
     }
 
     if(meta.artifact_mode) {
+        // 直传会先上传 FastDFS。这里提前检查制品坐标，避免冲突请求产生无用物理文件。
         struct CoordinateCheckResult {
             int code = Success;
             bool stop = false;
@@ -136,6 +137,7 @@ int32_t DirUploadServlet::handle(http::HttpRequest::ptr request
             return result;
         }
         soci::transaction tr(mysql->session());
+        // 直传成功后，逻辑文件记录、物理文件引用和制品元数据必须一起提交。
         if(!file_info::CreateFile(mysql, md5, file_id, username, filename, size, type)){
             tr.rollback();
             result.message = "create file record failed";

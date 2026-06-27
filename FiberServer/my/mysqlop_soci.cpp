@@ -706,6 +706,8 @@ bool CreateArtifact(SociDB::ptr db, const ArtifactInfo& artifact) {
     }
 
     try {
+        // 制品坐标不可变：同一 project/version/build/name 只允许复用相同 checksum，
+        // 避免 CI 重跑时把已发布构建静默覆盖成另一份物理文件。
         auto existing = GetArtifact(db, artifact.project_name, artifact.version,
                                     artifact.build_no, artifact.artifact_name);
         if (existing) {
@@ -924,6 +926,7 @@ bool CreateOrUpdateToken(SociDB::ptr db,
         return false;
     }
 
+    // 只保存 token 哈希，明文 token 只在请求中出现；当前用于演示/CI 闭环。
     auto token_hash = sha1(token);
     try {
         db->session() << "INSERT INTO project_token (project_name, token_hash, status) "
@@ -946,6 +949,7 @@ bool ValidateToken(SociDB::ptr db,
         return false;
     }
 
+    // 校验时对请求 token 做同样哈希，再和 project_token 表中的启用记录比较。
     auto token_hash = sha1(token);
     try {
         auto& sql = db->session();

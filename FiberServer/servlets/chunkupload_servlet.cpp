@@ -46,6 +46,8 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
     std::string file_path = request->getHeader("X-File-Path");
     std::string body = request->getBody();
     try {
+        // 分片上传兼容两种来源：普通 body 直接传分片，或 Nginx 落盘后通过 X-File-Path 传临时文件路径。
+        // 元数据优先从 query 读取；Nginx/客户端也可以把缺失字段放进 X-Chunk-Meta。
         // 閸忓啯鏆熼幑顔荤矤 body JSON 閼惧嘲褰囬敍鍦inx 娴犲秶鍔ф导姘虫祮閸?body閿?        // 娴ｅ棗顩ч弸?Nginx client_body_in_file_only=on閿涘異ody 閸欘垵鍏樻稉铏光敄
         // 閹碘偓娴犮儰绡冮弨顖涘瘮娴?query params 閼惧嘲褰?
         Json::Value json;
@@ -78,12 +80,14 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
         // } else
         // FIBER_LOG_INFO(g_logger) << "body size: " << body.size();
         {
+            // total_chunks 和 chunk_index 是分片协议字段，必须在保存分片前确定。
             // 娴?query params 閼惧嘲褰囬敍鍫濆缁旑垰褰查柅姘崇箖 URL 閸欏倹鏆熸导鐘烩偓鎺炵礆
             // FIBER_LOG_INFO(g_logger) << "get param from query";
             total_chunks = request->getParamAs<int>("total_chunks", 0);
             chunk_index = request->getParamAs<int>("chunk_index", -1);
         }
         // FIBER_LOG_INFO(g_logger) << "username: " << username << " md5: " << md5 << " size: " << size << " type: " << type << " filename: " << filename << " total_chunks: " << total_chunks << " chunk_index: " << chunk_index;
+        // X-Chunk-Meta 用来补齐 artifact_name/version/build_no/branch/commit_id 等制品元数据。
         // 娑旂喎鐨剧拠鏇氱矤閼奉亜鐣炬稊?header 閼惧嘲褰囬敍鍫熸付閸欘垶娼惃鍕煙瀵骏绱?
         std::string meta_header = request->getHeader("X-Chunk-Meta");
         if (!meta_header.empty()) {
@@ -126,6 +130,7 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
         }
 
         if(request_meta.artifact_mode) {
+            // 分片写入前先检查坐标，避免冲突制品留下临时分片或触发最终合并上传。
             struct CoordinateCheckResult {
                 int code = Success;
                 bool stop = false;
@@ -187,6 +192,7 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
         }
         perf.addFileIoMs(ready_timer.elapsedMs());
         // FIBER_LOG_INFO(g_logger) << "all chunks uploaded";
+        // 所有分片到齐后先按编号合并本地临时文件，再上传到 FastDFS。
         // 閹碘偓閺堝鍨庨悧鍥ф皑缂侇亷绱濋崥鍫濊嫙楠炴湹绗傛导鐘插煂 FastDFS
         PerfTimer merge_timer;
         std::string merged_path = ChunkManager::mergeChunks(username, md5, total_chunks);
@@ -218,6 +224,7 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
                 return result;
             }
             soci::transaction tr(mysql->session());
+            // 合并上传完成后，数据库三类记录必须同事务提交，保证引用计数和制品元数据一致。
             if(!file_info::CreateFile(mysql, md5, file_id, username, filename, size, type)){
                 tr.rollback();
                 result.message = "create file record failed";

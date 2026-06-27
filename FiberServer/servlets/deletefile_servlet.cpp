@@ -61,6 +61,7 @@ int32_t DeleteFileServlet::handle(http::HttpRequest::ptr request
                 return result;
             }
             if(artifact_request) {
+                // artifact 删除按制品坐标定位，先删除 artifact_info，再处理兼容旧 file_info 的逻辑记录。
                 auto artifact = artifact_info::GetArtifact(mysql, meta.owner, meta.version,
                                                            meta.build_no, meta.artifact_name);
                 if(!artifact) {
@@ -80,6 +81,7 @@ int32_t DeleteFileServlet::handle(http::HttpRequest::ptr request
                     result.message = "delete file record failed";
                     return result;
                 }
+                // 物理文件可能被多个项目共享，只有引用计数归零才删除 shared 记录和 FastDFS 文件。
                 int ref = file_shared::DecrementRef(mysql, artifact->checksum);
                 if(ref < 0) {
                     tr.rollback();

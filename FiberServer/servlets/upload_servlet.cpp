@@ -77,6 +77,7 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
                 return result;
             }
             if(meta.artifact_mode) {
+                // precheck 阶段先查制品坐标，命中相同 checksum 直接复用，checksum 不同则拒绝。
                 auto artifact = artifact_info::GetArtifact(mysql, meta.owner, meta.version,
                                                            meta.build_no, meta.artifact_name);
                 if(artifact) {
@@ -94,6 +95,7 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
             }
             if(file_info::ExistsByMd5AndUser(mysql, md5, username)){
                 if(meta.artifact_mode) {
+                    // 物理文件已属于该项目时，只需补 artifact_info 元数据即可完成秒传。
                     auto file_id = file_shared::GetFileIdByMd5(mysql, md5);
                     if(file_id.empty() ||
                        !artifact_info::CreateArtifact(mysql, BuildArtifactInfo(meta, file_id))) {
@@ -110,6 +112,7 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
             if(file_shared::ExistsByMd5(mysql, md5)){
                 std::string file_id = file_shared::GetFileIdByMd5(mysql, md5);
                 soci::transaction tr(mysql->session());
+                // 跨项目复用同一物理文件：引用计数、逻辑文件记录、制品元数据必须同事务提交。
                 if(!file_shared::IncrementRef(mysql, md5) ||
                    !file_info::CreateFile(mysql, md5, file_id, username, filename, size, "")) {
                     tr.rollback();
@@ -145,7 +148,7 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
         std::vector<int> uploadedChunks = ChunkManager::getUploadedChunks(username, md5);
         perf.addFileIoMs(file_io_timer.elapsedMs());
         
-        // 闁哄秷顫夊畵渚€寮崶锔筋偨濠㈠爢鍐瘓闁告劕鍟块悾鐐▔婵犱胶鐐婃俊顖椻偓宕囩
+        // 根据声明大小选择直传或分片；大文件返回已上传分片列表，支持断点续传。
         if (size <= ChunkManager::getChunkSizes()) {
             FIBER_LOG_INFO(g_logger) << "direct upload, size=" << size;
             response->setBody(StringUtil::Format(

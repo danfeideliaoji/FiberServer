@@ -39,6 +39,7 @@ int32_t ArtifactTokenServlet::handle(http::HttpRequest::ptr request,
         }
 
         PerfTimer db_timer;
+        // 轻量演示/CI 配置入口：创建或轮换某个 project_name 的上传 token。
         auto ok = DbExecutorMgr::GetInstance()->submit([meta, token]() {
             SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
             return project_token::CreateOrUpdateToken(mysql, meta.owner, token);
