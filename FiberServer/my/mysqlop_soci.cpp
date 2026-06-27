@@ -706,15 +706,17 @@ bool CreateArtifact(SociDB::ptr db, const ArtifactInfo& artifact) {
     }
 
     try {
+        auto existing = GetArtifact(db, artifact.project_name, artifact.version,
+                                    artifact.build_no, artifact.artifact_name);
+        if (existing) {
+            return existing->checksum == artifact.checksum;
+        }
+
         db->session() << "INSERT INTO artifact_info "
                          "(project_name, version, build_no, artifact_name, checksum, file_id, "
                          "size, artifact_type, branch, commit_id) "
                          "VALUES (:project_name, :version, :build_no, :artifact_name, :checksum, :file_id, "
-                         ":size, :artifact_type, :branch, :commit_id) "
-                         "ON DUPLICATE KEY UPDATE "
-                         "checksum = VALUES(checksum), file_id = VALUES(file_id), size = VALUES(size), "
-                         "artifact_type = VALUES(artifact_type), branch = VALUES(branch), "
-                         "commit_id = VALUES(commit_id), update_time = CURRENT_TIMESTAMP",
+                         ":size, :artifact_type, :branch, :commit_id)",
                          soci::use(artifact.project_name, "project_name"),
                          soci::use(artifact.version, "version"),
                          soci::use(artifact.build_no, "build_no"),

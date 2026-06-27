@@ -80,9 +80,15 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
                 auto artifact = artifact_info::GetArtifact(mysql, meta.owner, meta.version,
                                                            meta.build_no, meta.artifact_name);
                 if(artifact) {
-                    result.code = Success;
-                    result.status = "artifact_existing";
-                    result.message = "artifact already exists";
+                    if(artifact->checksum == meta.checksum) {
+                        result.code = Success;
+                        result.status = "artifact_existing";
+                        result.message = "artifact already exists";
+                    } else {
+                        result.code = OtherError;
+                        result.status = "artifact_conflict";
+                        result.message = "artifact checksum conflict";
+                    }
                     return result;
                 }
             }

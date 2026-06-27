@@ -71,6 +71,42 @@ int32_t DirUploadServlet::handle(http::HttpRequest::ptr request
         return -1;
     }
 
+    if(meta.artifact_mode) {
+        struct CoordinateCheckResult {
+            int code = Success;
+            bool stop = false;
+            std::string message;
+        };
+        auto coordinate_check = DbExecutorMgr::GetInstance()->submit([meta]() {
+            CoordinateCheckResult result;
+            SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
+            if(!mysql) {
+                result.code = OtherError;
+                result.stop = true;
+                result.message = "mysql connection error";
+                return result;
+            }
+            auto artifact = artifact_info::GetArtifact(mysql, meta.owner, meta.version,
+                                                       meta.build_no, meta.artifact_name);
+            if(!artifact) {
+                return result;
+            }
+            result.stop = true;
+            if(artifact->checksum == meta.checksum) {
+                result.message = "artifact already exists";
+            } else {
+                result.code = OtherError;
+                result.message = "artifact checksum conflict";
+            }
+            return result;
+        });
+        if(coordinate_check.stop) {
+            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"%s\"}",
+                coordinate_check.code, coordinate_check.message.c_str()));
+            return coordinate_check.code == Success ? 0 : -1;
+        }
+    }
+
     std::string fileContent = request->getBody();
     if(fileContent.empty()) {
         response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"empty file content\"}", OtherError));

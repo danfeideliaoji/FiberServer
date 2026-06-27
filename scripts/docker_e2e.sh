@@ -228,6 +228,11 @@ artifact_upload_url="${BASE_URL}/api/artifacts/upload/direct?project_name=${ARTI
 artifact_upload_response="$(printf '%s' "$ARTIFACT_CONTENT" | curl -fsS -H "Content-Type: ${ARTIFACT_TYPE}" -H "$ARTIFACT_AUTH_HEADER" --data-binary @- "$artifact_upload_url")"
 assert_code "artifact direct upload" "0" "$artifact_upload_response"
 
+ARTIFACT_CONFLICT_CHECKSUM="$(printf '%s-conflict' "$ARTIFACT_CONTENT" | md5sum | awk '{print $1}')"
+artifact_conflict_body="$(printf '{"project_name":"%s","checksum":"%s","artifact_name":"%s","version":"%s","build_no":"%s","branch":"%s","commit_id":"%s","size":%s}' "$ARTIFACT_PROJECT" "$ARTIFACT_CONFLICT_CHECKSUM" "$ARTIFACT_NAME" "$ARTIFACT_VERSION" "$ARTIFACT_BUILD_NO" "$ARTIFACT_BRANCH" "$ARTIFACT_COMMIT_ID" "$ARTIFACT_SIZE")"
+artifact_conflict_response="$(curl -fsS -H 'Content-Type: application/json' -H "$ARTIFACT_AUTH_HEADER" -d "$artifact_conflict_body" "${BASE_URL}/api/artifacts/precheck")"
+assert_code "artifact coordinate checksum conflict" "3" "$artifact_conflict_response"
+
 artifact_list_body="$(printf '{"project_name":"%s"}' "$ARTIFACT_PROJECT")"
 artifact_list_response="$(curl -fsS -H 'Content-Type: application/json' -d "$artifact_list_body" "${BASE_URL}/api/artifacts/list")"
 assert_code "artifact list" "0" "$artifact_list_response"

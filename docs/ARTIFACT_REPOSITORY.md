@@ -97,6 +97,12 @@ curl -X POST http://localhost:8080/api/artifacts/token \
   -d '{"project_name":"auth-service","token":"ci-secret"}'
 ```
 
+## 坐标不可变
+
+`project_name + version + build_no + artifact_name` 被视为一个制品坐标。
+同一坐标重复上传相同 checksum 会被当成已存在制品复用；如果 checksum 不同，
+服务端会返回 `artifact checksum conflict`，避免同一版本/构建号下的制品被静默覆盖。
+
 ## 示例
 
 上传前检查：

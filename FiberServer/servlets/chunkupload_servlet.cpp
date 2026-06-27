@@ -125,6 +125,44 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
             return -1;
         }
 
+        if(request_meta.artifact_mode) {
+            struct CoordinateCheckResult {
+                int code = Success;
+                bool stop = false;
+                std::string message;
+            };
+            auto coordinate_check = DbExecutorMgr::GetInstance()->submit([request_meta]() {
+                CoordinateCheckResult result;
+                SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
+                if(!mysql) {
+                    result.code = OtherError;
+                    result.stop = true;
+                    result.message = "mysql connection error";
+                    return result;
+                }
+                auto artifact = artifact_info::GetArtifact(mysql, request_meta.owner,
+                                                           request_meta.version,
+                                                           request_meta.build_no,
+                                                           request_meta.artifact_name);
+                if(!artifact) {
+                    return result;
+                }
+                result.stop = true;
+                if(artifact->checksum == request_meta.checksum) {
+                    result.message = "artifact already exists";
+                } else {
+                    result.code = OtherError;
+                    result.message = "artifact checksum conflict";
+                }
+                return result;
+            });
+            if(coordinate_check.stop) {
+                response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"%s\"}",
+                    coordinate_check.code, coordinate_check.message.c_str()));
+                return coordinate_check.code == Success ? 0 : -1;
+            }
+        }
+
         // FIBER_LOG_INFO(g_logger) << "chunk upload: user=" << username << " md5=" << md5
         //                          << " chunk=" << chunk_index+1 << "/" << total_chunks;
 
