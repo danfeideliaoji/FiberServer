@@ -373,10 +373,23 @@ void test_artifact_info_contract() {
         const std::string&,
         const std::string&,
         const std::string&) = &FiberServer::artifact_info::DeleteArtifact;
+    std::shared_ptr<FiberServer::ArtifactInfo> (*latest_artifact)(
+        FiberServer::SociDB::ptr,
+        const std::string&) = &FiberServer::artifact_info::GetLatestArtifact;
+    std::vector<std::string> (*versions_by_project)(
+        FiberServer::SociDB::ptr,
+        const std::string&) = &FiberServer::artifact_info::GetVersionsByProject;
+    std::vector<std::string> (*builds_by_version)(
+        FiberServer::SociDB::ptr,
+        const std::string&,
+        const std::string&) = &FiberServer::artifact_info::GetBuildsByVersion;
 
     assert(create_artifact != nullptr);
     assert(get_artifact != nullptr);
     assert(delete_artifact != nullptr);
+    assert(latest_artifact != nullptr);
+    assert(versions_by_project != nullptr);
+    assert(builds_by_version != nullptr);
     std::cout << "artifact info contract test passed" << std::endl;
 }
 

@@ -45,6 +45,14 @@ json_artifact_field_by_name() {
     python3 -c 'import json,sys; name=sys.argv[1]; field=sys.argv[2]; data=json.load(sys.stdin); artifacts=data.get("artifacts") or []; print(next((f.get(field,"") for f in artifacts if f.get("artifact_name") == name), ""))' "$1" "$2"
 }
 
+json_artifact_field() {
+    python3 -c 'import json,sys; data=json.load(sys.stdin); print((data.get("artifact") or {}).get(sys.argv[1], ""))' "$1"
+}
+
+json_array_contains() {
+    python3 -c 'import json,sys; data=json.load(sys.stdin); print("yes" if sys.argv[2] in (data.get(sys.argv[1]) or []) else "no")' "$1" "$2"
+}
+
 json_field() {
     python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1], ""))' "$1"
 }
@@ -235,6 +243,31 @@ artifact_headers="$(curl -fsSI "${DOWNLOAD_HEADER_BASE_URL}/api/artifacts/downlo
 if ! printf '%s\n' "$artifact_headers" | grep -qi '^X-Accel-Redirect:'; then
     echo "artifact download failed: missing X-Accel-Redirect header" >&2
     printf '%s\n' "$artifact_headers" >&2
+    exit 1
+fi
+
+artifact_latest_response="$(curl -fsS "${BASE_URL}/api/artifacts/latest?project_name=${ARTIFACT_PROJECT}")"
+assert_code "artifact latest" "0" "$artifact_latest_response"
+latest_artifact_name="$(printf '%s' "$artifact_latest_response" | json_artifact_field artifact_name)"
+if [[ "$latest_artifact_name" != "$ARTIFACT_NAME" ]]; then
+    echo "artifact latest failed: expected ${ARTIFACT_NAME}, got ${latest_artifact_name}" >&2
+    echo "$artifact_latest_response" >&2
+    exit 1
+fi
+
+artifact_versions_response="$(curl -fsS "${BASE_URL}/api/artifacts/versions?project_name=${ARTIFACT_PROJECT}")"
+assert_code "artifact versions" "0" "$artifact_versions_response"
+if [[ "$(printf '%s' "$artifact_versions_response" | json_array_contains versions "$ARTIFACT_VERSION")" != "yes" ]]; then
+    echo "artifact versions failed: missing ${ARTIFACT_VERSION}" >&2
+    echo "$artifact_versions_response" >&2
+    exit 1
+fi
+
+artifact_builds_response="$(curl -fsS "${BASE_URL}/api/artifacts/builds?project_name=${ARTIFACT_PROJECT}&version=${ARTIFACT_VERSION}")"
+assert_code "artifact builds" "0" "$artifact_builds_response"
+if [[ "$(printf '%s' "$artifact_builds_response" | json_array_contains builds "$ARTIFACT_BUILD_NO")" != "yes" ]]; then
+    echo "artifact builds failed: missing ${ARTIFACT_BUILD_NO}" >&2
+    echo "$artifact_builds_response" >&2
     exit 1
 fi
 

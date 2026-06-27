@@ -815,6 +815,80 @@ std::vector<std::shared_ptr<ArtifactInfo>> GetArtifactsByProject(SociDB::ptr db,
     return artifacts;
 }
 
+std::shared_ptr<ArtifactInfo> GetLatestArtifact(SociDB::ptr db,
+                                                const std::string& project_name) {
+    if (!EnsureArtifactTable(db)) {
+        return nullptr;
+    }
+
+    try {
+        auto& sql = db->session();
+        soci::row row;
+        sql << "SELECT id, project_name, version, build_no, artifact_name, checksum, file_id, "
+               "size, artifact_type, branch, commit_id, create_time, update_time "
+               "FROM artifact_info FORCE INDEX (idx_project_id) "
+               "WHERE project_name = :project_name ORDER BY id DESC LIMIT 1",
+               soci::use(project_name, "project_name"),
+               soci::into(row);
+        if (!sql.got_data()) {
+            return nullptr;
+        }
+        return ArtifactInfoFromRow(row);
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetLatestArtifact error: " << e.what();
+        return nullptr;
+    }
+}
+
+std::vector<std::string> GetVersionsByProject(SociDB::ptr db,
+                                              const std::string& project_name) {
+    std::vector<std::string> versions;
+    if (!EnsureArtifactTable(db)) {
+        return versions;
+    }
+
+    try {
+        auto& sql = db->session();
+        soci::rowset<std::string> rows =
+            (sql.prepare << "SELECT DISTINCT version FROM artifact_info "
+                            "WHERE project_name = :project_name ORDER BY version DESC",
+                            soci::use(project_name, "project_name"));
+        for (const auto& version : rows) {
+            versions.push_back(version);
+        }
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetVersionsByProject error: " << e.what();
+    }
+
+    return versions;
+}
+
+std::vector<std::string> GetBuildsByVersion(SociDB::ptr db,
+                                            const std::string& project_name,
+                                            const std::string& version) {
+    std::vector<std::string> builds;
+    if (!EnsureArtifactTable(db)) {
+        return builds;
+    }
+
+    try {
+        auto& sql = db->session();
+        soci::rowset<std::string> rows =
+            (sql.prepare << "SELECT DISTINCT build_no FROM artifact_info "
+                            "WHERE project_name = :project_name AND version = :version "
+                            "ORDER BY build_no DESC",
+                            soci::use(project_name, "project_name"),
+                            soci::use(version, "version"));
+        for (const auto& build : rows) {
+            builds.push_back(build);
+        }
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI GetBuildsByVersion error: " << e.what();
+    }
+
+    return builds;
+}
+
 }
 
 namespace file_shared {

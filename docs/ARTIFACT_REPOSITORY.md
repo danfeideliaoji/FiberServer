@@ -70,6 +70,9 @@ Artifact API 使用新的业务字段：
 | `POST /api/artifacts/checksum` | checksum 存在性检查 |
 | `GET /api/artifacts/download` | 下载制品 |
 | `POST /api/artifacts/delete` | 删除制品记录 |
+| `GET /api/artifacts/latest` | 查询项目最新制品 |
+| `GET /api/artifacts/versions` | 查询项目版本列表 |
+| `GET /api/artifacts/builds` | 查询项目指定版本下的构建号列表 |
 
 ## 示例
 
@@ -111,6 +114,24 @@ curl -X POST http://localhost:8080/api/artifacts/list \
 ```bash
 curl -I \
   'http://localhost:8080/api/artifacts/download?project_name=auth-service&version=1.2.0&build_no=104&artifact_name=auth-service.tar.gz'
+```
+
+查询最新制品：
+
+```bash
+curl 'http://localhost:8080/api/artifacts/latest?project_name=auth-service'
+```
+
+查询版本列表：
+
+```bash
+curl 'http://localhost:8080/api/artifacts/versions?project_name=auth-service'
+```
+
+查询构建号列表：
+
+```bash
+curl 'http://localhost:8080/api/artifacts/builds?project_name=auth-service&version=1.2.0'
 ```
 
 ## 面试表述

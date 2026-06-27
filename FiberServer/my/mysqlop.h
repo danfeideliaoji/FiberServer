@@ -111,6 +111,13 @@ std::vector<std::shared_ptr<ArtifactInfo>> GetArtifactsByProject(SociDB::ptr db,
                                                                  const std::string& project_name,
                                                                  int offset,
                                                                  int limit);
+std::shared_ptr<ArtifactInfo> GetLatestArtifact(SociDB::ptr db,
+                                                const std::string& project_name);
+std::vector<std::string> GetVersionsByProject(SociDB::ptr db,
+                                              const std::string& project_name);
+std::vector<std::string> GetBuildsByVersion(SociDB::ptr db,
+                                            const std::string& project_name,
+                                            const std::string& version);
 
 }
 
