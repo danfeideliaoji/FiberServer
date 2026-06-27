@@ -209,17 +209,23 @@ ARTIFACT_COMMIT_ID="commit-${USER_NAME}"
 ARTIFACT_NAME="server-${USER_NAME}.tar.gz"
 ARTIFACT_TYPE="application/gzip"
 ARTIFACT_CONTENT="fiber artifact e2e ${USER_NAME}"
+ARTIFACT_TOKEN="token-${USER_NAME}"
 ARTIFACT_CHECKSUM="$(printf '%s' "$ARTIFACT_CONTENT" | md5sum | awk '{print $1}')"
 ARTIFACT_SIZE="$(printf '%s' "$ARTIFACT_CONTENT" | wc -c | awk '{print $1}')"
 ENCODED_ARTIFACT_NAME="$(urlencode "$ARTIFACT_NAME")"
 ENCODED_ARTIFACT_TYPE="$(urlencode "$ARTIFACT_TYPE")"
 
+artifact_token_body="$(printf '{"project_name":"%s","token":"%s"}' "$ARTIFACT_PROJECT" "$ARTIFACT_TOKEN")"
+artifact_token_response="$(curl -fsS -H 'Content-Type: application/json' -d "$artifact_token_body" "${BASE_URL}/api/artifacts/token")"
+assert_code "artifact token create" "0" "$artifact_token_response"
+ARTIFACT_AUTH_HEADER="Authorization: Bearer ${ARTIFACT_TOKEN}"
+
 artifact_precheck_body="$(printf '{"project_name":"%s","checksum":"%s","artifact_name":"%s","version":"%s","build_no":"%s","branch":"%s","commit_id":"%s","size":%s}' "$ARTIFACT_PROJECT" "$ARTIFACT_CHECKSUM" "$ARTIFACT_NAME" "$ARTIFACT_VERSION" "$ARTIFACT_BUILD_NO" "$ARTIFACT_BRANCH" "$ARTIFACT_COMMIT_ID" "$ARTIFACT_SIZE")"
-artifact_precheck_response="$(curl -fsS -H 'Content-Type: application/json' -d "$artifact_precheck_body" "${BASE_URL}/api/artifacts/precheck")"
+artifact_precheck_response="$(curl -fsS -H 'Content-Type: application/json' -H "$ARTIFACT_AUTH_HEADER" -d "$artifact_precheck_body" "${BASE_URL}/api/artifacts/precheck")"
 assert_code "artifact precheck" "1" "$artifact_precheck_response"
 
 artifact_upload_url="${BASE_URL}/api/artifacts/upload/direct?project_name=${ARTIFACT_PROJECT}&checksum=${ARTIFACT_CHECKSUM}&artifact_name=${ENCODED_ARTIFACT_NAME}&version=${ARTIFACT_VERSION}&build_no=${ARTIFACT_BUILD_NO}&branch=${ARTIFACT_BRANCH}&commit_id=${ARTIFACT_COMMIT_ID}&size=${ARTIFACT_SIZE}&artifact_type=${ENCODED_ARTIFACT_TYPE}"
-artifact_upload_response="$(printf '%s' "$ARTIFACT_CONTENT" | curl -fsS -H "Content-Type: ${ARTIFACT_TYPE}" --data-binary @- "$artifact_upload_url")"
+artifact_upload_response="$(printf '%s' "$ARTIFACT_CONTENT" | curl -fsS -H "Content-Type: ${ARTIFACT_TYPE}" -H "$ARTIFACT_AUTH_HEADER" --data-binary @- "$artifact_upload_url")"
 assert_code "artifact direct upload" "0" "$artifact_upload_response"
 
 artifact_list_body="$(printf '{"project_name":"%s"}' "$ARTIFACT_PROJECT")"
@@ -272,7 +278,7 @@ if [[ "$(printf '%s' "$artifact_builds_response" | json_array_contains builds "$
 fi
 
 artifact_delete_body="$(printf '{"project_name":"%s","artifact_name":"%s","version":"%s","build_no":"%s"}' "$ARTIFACT_PROJECT" "$ARTIFACT_NAME" "$ARTIFACT_VERSION" "$ARTIFACT_BUILD_NO")"
-artifact_delete_response="$(curl -fsS -H 'Content-Type: application/json' -d "$artifact_delete_body" "${BASE_URL}/api/artifacts/delete")"
+artifact_delete_response="$(curl -fsS -H 'Content-Type: application/json' -H "$ARTIFACT_AUTH_HEADER" -d "$artifact_delete_body" "${BASE_URL}/api/artifacts/delete")"
 assert_code "artifact delete" "0" "$artifact_delete_response"
 
 CHUNK_FILE="${TMP_DIR}/${CHUNK_FILE_NAME}"

@@ -1,4 +1,5 @@
 #include "upload_servlet.h"
+#include "FiberServer/servlets/artifact_auth.h"
 #include <string>
 #include "FiberServer/base/log.h"
 #include "FiberServer/base/util.h"
@@ -56,6 +57,9 @@ int32_t UploadServlet::handle(http::HttpRequest::ptr request
         int64_t size = meta.size;
         if(username.empty() || md5.empty() || size <= 0) {
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/username, checksum/md5, size required\"}", OtherError));
+            return -1;
+        }
+        if(!RequireArtifactToken(request, meta, response)) {
             return -1;
         }
         PerfTimer db_timer;

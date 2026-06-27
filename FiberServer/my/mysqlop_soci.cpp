@@ -1,6 +1,7 @@
 #include "mysqlop.h"
 
 #include "FiberServer/base/log.h"
+#include "FiberServer/util/hash_util.h"
 
 #include <soci/soci.h>
 
@@ -887,6 +888,76 @@ std::vector<std::string> GetBuildsByVersion(SociDB::ptr db,
     }
 
     return builds;
+}
+
+}
+
+namespace project_token {
+
+static bool EnsureProjectTokenTable(SociDB::ptr db) {
+    if (!db) {
+        return false;
+    }
+    try {
+        db->session() << "CREATE TABLE IF NOT EXISTS project_token ("
+                         "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+                         "project_name VARCHAR(128) NOT NULL UNIQUE, "
+                         "token_hash VARCHAR(128) NOT NULL, "
+                         "status TINYINT NOT NULL DEFAULT 1, "
+                         "create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                         "update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
+                         "INDEX idx_status (status)"
+                         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI EnsureProjectTokenTable error: " << e.what();
+        return false;
+    }
+}
+
+bool CreateOrUpdateToken(SociDB::ptr db,
+                         const std::string& project_name,
+                         const std::string& token) {
+    if (project_name.empty() || token.empty() || !EnsureProjectTokenTable(db)) {
+        return false;
+    }
+
+    auto token_hash = sha1(token);
+    try {
+        db->session() << "INSERT INTO project_token (project_name, token_hash, status) "
+                         "VALUES (:project_name, :token_hash, 1) "
+                         "ON DUPLICATE KEY UPDATE token_hash = VALUES(token_hash), "
+                         "status = 1, update_time = CURRENT_TIMESTAMP",
+                         soci::use(project_name, "project_name"),
+                         soci::use(token_hash, "token_hash");
+        return true;
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI CreateOrUpdateToken error: " << e.what();
+        return false;
+    }
+}
+
+bool ValidateToken(SociDB::ptr db,
+                   const std::string& project_name,
+                   const std::string& token) {
+    if (project_name.empty() || token.empty() || !EnsureProjectTokenTable(db)) {
+        return false;
+    }
+
+    auto token_hash = sha1(token);
+    try {
+        auto& sql = db->session();
+        long long id = 0;
+        sql << "SELECT id FROM project_token WHERE project_name = :project_name "
+               "AND token_hash = :token_hash AND status = 1 LIMIT 1",
+               soci::use(project_name, "project_name"),
+               soci::use(token_hash, "token_hash"),
+               soci::into(id);
+        return sql.got_data();
+    } catch (const std::exception& e) {
+        FIBER_LOG_ERROR(g_logger) << "SOCI ValidateToken error: " << e.what();
+        return false;
+    }
 }
 
 }

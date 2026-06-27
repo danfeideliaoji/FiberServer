@@ -70,9 +70,32 @@ Artifact API 使用新的业务字段：
 | `POST /api/artifacts/checksum` | checksum 存在性检查 |
 | `GET /api/artifacts/download` | 下载制品 |
 | `POST /api/artifacts/delete` | 删除制品记录 |
+| `POST /api/artifacts/token` | 创建或轮换项目上传 token |
 | `GET /api/artifacts/latest` | 查询项目最新制品 |
 | `GET /api/artifacts/versions` | 查询项目版本列表 |
 | `GET /api/artifacts/builds` | 查询项目指定版本下的构建号列表 |
+
+## Token 鉴权
+
+Artifact 写接口需要项目 token：
+
+- `POST /api/artifacts/precheck`
+- `POST /api/artifacts/upload/direct`
+- `POST /api/artifacts/upload/chunk`
+- `POST /api/artifacts/delete`
+
+客户端使用 `Authorization: Bearer <token>` 或 `X-Artifact-Token` 传入 token。
+服务端只在 `project_token` 表保存 token 哈希，不保存明文。`POST /api/artifacts/token`
+是为了演示和 CI e2e 闭环提供的轻量创建/轮换接口；生产环境建议把它放到管理员控制面，
+或者改成运维侧预置密钥。
+
+创建或轮换 token：
+
+```bash
+curl -X POST http://localhost:8080/api/artifacts/token \
+  -H 'Content-Type: application/json' \
+  -d '{"project_name":"auth-service","token":"ci-secret"}'
+```
 
 ## 示例
 
@@ -81,6 +104,7 @@ Artifact API 使用新的业务字段：
 ```bash
 curl -X POST http://localhost:8080/api/artifacts/precheck \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer ci-secret' \
   -d '{
     "project_name": "auth-service",
     "version": "1.2.0",
@@ -98,6 +122,7 @@ curl -X POST http://localhost:8080/api/artifacts/precheck \
 ```bash
 curl -X POST \
   'http://localhost:8080/api/artifacts/upload/direct?project_name=auth-service&version=1.2.0&build_no=104&branch=main&commit_id=8f31c9a&artifact_name=auth-service.tar.gz&checksum=abc123&size=4096&artifact_type=application/gzip' \
+  -H 'Authorization: Bearer ci-secret' \
   --data-binary @auth-service.tar.gz
 ```
 

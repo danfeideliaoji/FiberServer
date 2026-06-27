@@ -393,11 +393,27 @@ void test_artifact_info_contract() {
     std::cout << "artifact info contract test passed" << std::endl;
 }
 
+void test_project_token_contract() {
+    bool (*create_token)(
+        FiberServer::SociDB::ptr,
+        const std::string&,
+        const std::string&) = &FiberServer::project_token::CreateOrUpdateToken;
+    bool (*validate_token)(
+        FiberServer::SociDB::ptr,
+        const std::string&,
+        const std::string&) = &FiberServer::project_token::ValidateToken;
+
+    assert(create_token != nullptr);
+    assert(validate_token != nullptr);
+    std::cout << "project token contract test passed" << std::endl;
+}
+
 int main(){
    FiberServer::Thread::SetName("main");
    test_hmac_vectors();
    test_artifact_metadata_aliases();
    test_artifact_info_contract();
+   test_project_token_contract();
    test_gmp_scheduler();
    test_gmp_batch_stealing();
    test_iomanager_sleep_timer();

@@ -12,3 +12,4 @@
 #include "FiberServer/servlets/download_servlet.h"
 #include "FiberServer/servlets/deletefile_servlet.h"
 #include "FiberServer/servlets/artifact_query_servlet.h"
+#include "FiberServer/servlets/artifact_token_servlet.h"

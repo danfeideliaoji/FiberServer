@@ -1,4 +1,5 @@
 #include "chunkupload_servlet.h"
+#include "FiberServer/servlets/artifact_auth.h"
 #include "FiberServer/my/artifact_metadata.h"
 #include "FiberServer/my/chunkManager.h"
 #include "FiberServer/my/fastdfs.h"
@@ -115,6 +116,14 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/username, checksum/md5, size, chunk_index, artifact_type/type, total_chunks required\"}", OtherError));
             return -1;
         }
+        request_meta.owner = username;
+        request_meta.checksum = md5;
+        request_meta.storage_name = filename;
+        request_meta.size = size;
+        request_meta.type = type;
+        if(!RequireArtifactToken(request, request_meta, response)) {
+            return -1;
+        }
 
         // FIBER_LOG_INFO(g_logger) << "chunk upload: user=" << username << " md5=" << md5
         //                          << " chunk=" << chunk_index+1 << "/" << total_chunks;
@@ -163,11 +172,6 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
             bool ok = false;
             std::string message;
         };
-        request_meta.owner = username;
-        request_meta.checksum = md5;
-        request_meta.storage_name = filename;
-        request_meta.size = size;
-        request_meta.type = type;
         auto db_result = DbExecutorMgr::GetInstance()->submit([md5, file_id, username, filename, size, type, request_meta]() {
             DbResult result;
             SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");

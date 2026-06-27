@@ -37,6 +37,7 @@ HttpServer::HttpServer(bool keepalive
     m_dispatch->addServlet("/api/artifacts/checksum", Servlet::ptr(new Md5Servlet));
     m_dispatch->addGlobServlet("/api/artifacts/download", Servlet::ptr(new DownloadServlet));
     m_dispatch->addServlet("/api/artifacts/delete", Servlet::ptr(new DeleteFileServlet));
+    m_dispatch->addServlet("/api/artifacts/token", Servlet::ptr(new ArtifactTokenServlet));
     m_dispatch->addServlet("/api/artifacts/latest", Servlet::ptr(new ArtifactQueryServlet));
     m_dispatch->addServlet("/api/artifacts/versions", Servlet::ptr(new ArtifactQueryServlet));
     m_dispatch->addServlet("/api/artifacts/builds", Servlet::ptr(new ArtifactQueryServlet));

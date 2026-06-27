@@ -121,6 +121,17 @@ std::vector<std::string> GetBuildsByVersion(SociDB::ptr db,
 
 }
 
+namespace project_token {
+
+bool CreateOrUpdateToken(SociDB::ptr db,
+                         const std::string& project_name,
+                         const std::string& token);
+bool ValidateToken(SociDB::ptr db,
+                   const std::string& project_name,
+                   const std::string& token);
+
+}
+
 namespace file_shared {
 
 bool ExistsByMd5(SociDB::ptr db, const std::string& md5);

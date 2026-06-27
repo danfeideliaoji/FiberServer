@@ -1,4 +1,5 @@
 #include "dirupload_servlet.h"
+#include "FiberServer/servlets/artifact_auth.h"
 #include "FiberServer/db/db_executor.h"
 #include "FiberServer/my/artifact_metadata.h"
 #include "FiberServer/my/fastdfs.h"
@@ -66,7 +67,10 @@ int32_t DirUploadServlet::handle(http::HttpRequest::ptr request
         response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/username, checksum/md5, size, artifact_type/type required\"}", OtherError));
         return -1;
     }
-    
+    if(!RequireArtifactToken(request, meta, response)) {
+        return -1;
+    }
+
     std::string fileContent = request->getBody();
     if(fileContent.empty()) {
         response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"empty file content\"}", OtherError));

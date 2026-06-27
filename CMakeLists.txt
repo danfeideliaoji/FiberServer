@@ -59,7 +59,8 @@ set(LIB_SRCS
     FiberServer/servlets/config_servlet.cpp FiberServer/servlets/status_servlet.cpp FiberServer/servlets/login_servlet.cpp FiberServer/servlets/register_servlet.cpp
     FiberServer/servlets/chunkupload_servlet.cpp FiberServer/servlets/dirupload_servlet.cpp FiberServer/servlets/upload_servlet.cpp
     FiberServer/servlets/myfiles_servlet.cpp FiberServer/servlets/md5_servlet.cpp FiberServer/servlets/download_servlet.cpp
-    FiberServer/servlets/deletefile_servlet.cpp FiberServer/servlets/artifact_query_servlet.cpp
+    FiberServer/servlets/deletefile_servlet.cpp FiberServer/servlets/artifact_auth.cpp
+    FiberServer/servlets/artifact_query_servlet.cpp FiberServer/servlets/artifact_token_servlet.cpp
     FiberServer/util/json_util.cpp FiberServer/util/hash_util.cpp
     FiberServer/my/artifact_metadata.cpp FiberServer/my/chunkManager.cpp FiberServer/my/fastdfs.cpp
     FiberServer/my/application.cpp

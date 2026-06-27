@@ -1,4 +1,5 @@
 #include "deletefile_servlet.h"
+#include "FiberServer/servlets/artifact_auth.h"
 #include "FiberServer/base/util.h"
 #include "FiberServer/base/log.h"
 #include "FiberServer/db/db_executor.h"
@@ -39,6 +40,9 @@ int32_t DeleteFileServlet::handle(http::HttpRequest::ptr request
         bool artifact_request = request->getPath() == "/api/artifacts/delete";
         if(username.empty() || file_name.empty()){
             response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/user, artifact_name/file_name are required\"}", OtherError));
+            return -1;
+        }
+        if(!RequireArtifactToken(request, meta, response)) {
             return -1;
         }
         PerfTimer db_timer;
