@@ -18,18 +18,7 @@ HttpServer::HttpServer(bool keepalive
     m_dispatch.reset(new ServletDispatch);
 
     m_type = "http";
-    m_dispatch->addServlet("/api/_/config", Servlet::ptr(new ConfigServlet));
     m_dispatch->addServlet("/api/status", Servlet::ptr(new StatusServlet));
-    m_dispatch->addServlet("/api/login", Servlet::ptr(new LoginServlet));
-    m_dispatch->addServlet("/api/register", Servlet::ptr(new RegisterServlet));
-    m_dispatch->addServlet("/api/upload", Servlet::ptr(new UploadServlet));         // 预检：秒传/直传/分片判断
-    m_dispatch->addServlet("/api/upload/dirupload", Servlet::ptr(new DirUploadServlet)); // 直传小文件
-    m_dispatch->addServlet("/api/uploadchunk", Servlet::ptr(new ChunkUploadServlet));     // 分片上传
-    m_dispatch->addServlet("/api/myfiles", Servlet::ptr(new MyFilesServlet));             // 文件列表
-    m_dispatch->addServlet("/api/md5", Servlet::ptr(new Md5Servlet));                     // MD5查询
-    m_dispatch->addGlobServlet("/api/download", Servlet::ptr(new DownloadServlet));      // 文件下载
-    m_dispatch->addServlet("/api/deletefile", Servlet::ptr(new DeleteFileServlet));         // 删除文件
-    m_dispatch->addServlet("/api/uploadchunk", Servlet::ptr(new ChunkUploadServlet));
     m_dispatch->addServlet("/api/artifacts/precheck", Servlet::ptr(new UploadServlet));
     m_dispatch->addServlet("/api/artifacts/upload/direct", Servlet::ptr(new DirUploadServlet));
     m_dispatch->addServlet("/api/artifacts/upload/chunk", Servlet::ptr(new ChunkUploadServlet));

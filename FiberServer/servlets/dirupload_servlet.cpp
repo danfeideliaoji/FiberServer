@@ -52,7 +52,7 @@ static std::map<std::string, std::string> parseQuery(const std::string& query) {
 int32_t DirUploadServlet::handle(http::HttpRequest::ptr request
                , http::HttpResponse::ptr response
                , http::HttpSession::ptr session) {
-    ScopedPerfLog perf("/api/upload/dirupload");
+    ScopedPerfLog perf(request->getPath());
     response->setHeader("Content-Type", "text/json charset=utf-8");
 
     auto params = parseQuery(request->getQuery());
@@ -64,7 +64,7 @@ int32_t DirUploadServlet::handle(http::HttpRequest::ptr request
     int64_t size = meta.size;
     std::string type = meta.type;
     if(username.empty() || md5.empty() || size <= 0 || type.empty()) {
-        response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/username, checksum/md5, size, artifact_type/type required\"}", OtherError));
+        response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name, checksum, size, artifact_type required\"}", OtherError));
         return -1;
     }
     if(!RequireArtifactToken(request, meta, response)) {

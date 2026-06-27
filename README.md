@@ -78,7 +78,7 @@ FiberServer/              核心源码
   db/                     SOCI 数据库封装和数据库执行器
   my/                     业务层封装，包括 FastDFS、元数据、应用入口
   net/                    Socket、TCP、HTTP 协议和服务端实现
-  servlets/               注册、登录、上传、下载、制品仓库等 HTTP 接口
+  servlets/               状态检查和制品仓库 HTTP 接口
   tests/                  单元测试和服务入口
 docker/                   Docker、MySQL 初始化 SQL、Nginx 配置
 docs/                     项目说明、答辩表述、运行说明、压测结果
@@ -120,7 +120,7 @@ bash scripts/docker_run_server.sh
 bash scripts/docker_e2e.sh
 ```
 
-e2e 覆盖注册、登录、普通上传、秒传、分片上传、制品 token 创建、制品上传、latest/versions/builds 查询、下载、删除和坐标冲突保护。
+e2e 覆盖服务状态、旧公开接口 404、制品 token 创建、制品预检、直传/分片上传、latest/versions/builds 查询、下载、删除和坐标冲突保护。
 
 ## Artifact API
 
@@ -164,21 +164,13 @@ curl -X POST http://localhost:8080/api/artifacts/precheck \
   }'
 ```
 
-## 兼容接口
-
-旧的文件服务接口仍保留，用于兼容原有测试和普通文件上传场景：
+## 保留接口
 
 | 接口 | 说明 |
 | --- | --- |
 | `GET /api/status` | 服务和调度器状态 |
-| `POST /api/register` | 用户注册 |
-| `POST /api/login` | 用户登录 |
-| `POST /api/upload` | 普通文件上传预检查 |
-| `POST /api/upload/dirupload` | 普通文件直传 |
-| `POST /api/uploadchunk` | 普通文件分片上传 |
-| `POST /api/myfiles` | 用户文件列表 |
-| `GET /api/download` | 普通文件下载 |
-| `POST /api/deletefile` | 普通文件删除 |
+
+旧的普通文件公开接口已移除，包括 `/api/register`、`/api/login`、`/api/upload`、`/api/upload/dirupload`、`/api/uploadchunk`、`/api/myfiles`、`/api/md5`、`/api/download` 和 `/api/deletefile`。当前业务层只对外保留状态接口和 `/api/artifacts/*` 制品仓库接口。
 
 ## 压测
 
@@ -186,18 +178,6 @@ curl -X POST http://localhost:8080/api/artifacts/precheck \
 
 ```bash
 bash scripts/docker_bench.sh
-```
-
-业务接口压测：
-
-```bash
-bash scripts/docker_bench_business.sh
-```
-
-不同并发档位压测：
-
-```bash
-bash scripts/docker_bench_rate.sh
 ```
 
 已有压测记录见 [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md)。

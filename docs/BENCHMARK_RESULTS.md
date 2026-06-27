@@ -9,8 +9,6 @@
 - 运行方式：Docker Compose 网络内运行压测脚本
 - 压测脚本：
   - `scripts/docker_bench.sh`
-  - `scripts/docker_bench_business.sh`
-  - `scripts/docker_bench_matrix.sh`
 - 业务依赖：
   - MySQL
   - FastDFS tracker
@@ -37,9 +35,11 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
 
 结论：纯状态接口在 100 并发下可以稳定完成，吞吐约 900 QPS。
 
-## 业务接口压测
+## 历史业务接口压测
 
-业务压测脚本会自动准备测试用户和样例文件，覆盖：
+以下数据来自旧普通文件接口仍存在时的历史压测，用于说明早期性能边界。当前公开业务接口已经收敛到 `/api/artifacts/*`，对应的旧压测脚本已删除。
+
+旧业务压测脚本曾自动准备测试用户和样例文件，覆盖：
 
 - `status`
 - `login`
@@ -119,16 +119,7 @@ HTTP keep-alive 对比（Nginx 入口，300 请求 / 30 并发，`FIBER_PERF_LOG
 
 压测配置：
 
-```bash
-docker compose -f docker-compose.dev.yml run --rm --no-deps \
-  -e BASE_URL=http://nginx \
-  -e DOWNLOAD_BASE_URL=http://nginx \
-  -e RATE=<rate> \
-  -e DURATION=20 \
-  -e WORKERS=180 \
-  -e BENCH_KEEPALIVE=1 \
-  fiberserver-dev bash scripts/docker_bench_rate.sh
-```
+该混合 RPS 压测依赖旧普通文件接口，当前脚本已删除；以下结果仅作为历史记录保留。
 
 结果：
 

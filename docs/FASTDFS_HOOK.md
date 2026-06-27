@@ -21,7 +21,7 @@ Environment:
 - Branch: `fastdfs-hook-test`
 - FastDFS client config: `docker/fdfs/client.conf`
 - App build: Release Docker build
-- Benchmark script: `scripts/docker_bench_business.sh`
+- Benchmark script: historical direct-upload benchmark, removed after public APIs were simplified to `/api/artifacts/*`
 
 Observed with `use_connection_pool=false`:
 

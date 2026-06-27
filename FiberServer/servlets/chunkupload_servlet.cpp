@@ -41,16 +41,13 @@ static ArtifactInfo BuildArtifactInfo(const ArtifactMetadata& meta, const std::s
 int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
                , http::HttpResponse::ptr response
                , http::HttpSession::ptr session) {
-    ScopedPerfLog perf("/api/uploadchunk");
+    ScopedPerfLog perf(request->getPath());
     response->setHeader("Content-Type", "text/json charset=utf-8");
     std::string file_path = request->getHeader("X-File-Path");
     std::string body = request->getBody();
     try {
-        // 分片上传兼容两种来源：普通 body 直接传分片，或 Nginx 落盘后通过 X-File-Path 传临时文件路径。
+        // 分片上传兼容两种来源：body 直接传分片，或 Nginx 落盘后通过 X-File-Path 传临时文件路径。
         // 元数据优先从 query 读取；Nginx/客户端也可以把缺失字段放进 X-Chunk-Meta。
-        // 閸忓啯鏆熼幑顔荤矤 body JSON 閼惧嘲褰囬敍鍦inx 娴犲秶鍔ф导姘虫祮閸?body閿?        // 娴ｅ棗顩ч弸?Nginx client_body_in_file_only=on閿涘異ody 閸欘垵鍏樻稉铏光敄
-        // 閹碘偓娴犮儰绡冮弨顖涘瘮娴?query params 閼惧嘲褰?
-        Json::Value json;
         std::map<std::string, std::string> query_params;
         for (const auto& key : {"project_name", "project", "namespace", "username", "user",
                                 "checksum", "md5", "artifact_name", "filename", "file_name",
@@ -67,28 +64,12 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
         std::string filename = request_meta.storage_name;
         int64_t size = request_meta.size;
         int total_chunks = 0, chunk_index = -1;
-        // FIBER_LOG_INFO(g_logger) << "body: " << body;
-        // if (!body.empty() && JsonUtil::FromString(json, body)) {
-        //     FIBER_LOG_INFO(g_logger) << "get param from body";
-        //     username = JsonUtil::GetString(json, "username");
-        //     md5 = JsonUtil::GetString(json, "md5");
-        //     size = JsonUtil::GetInt64(json, "size");
-        //     type = JsonUtil::GetString(json, "type");
-        //     filename = JsonUtil::GetString(json, "filename");
-        //     total_chunks = JsonUtil::GetInt32(json, "total_chunks", 0);
-        //     chunk_index = JsonUtil::GetInt32(json, "chunk_index", -1);
-        // } else
-        // FIBER_LOG_INFO(g_logger) << "body size: " << body.size();
         {
             // total_chunks 和 chunk_index 是分片协议字段，必须在保存分片前确定。
-            // 娴?query params 閼惧嘲褰囬敍鍫濆缁旑垰褰查柅姘崇箖 URL 閸欏倹鏆熸导鐘烩偓鎺炵礆
-            // FIBER_LOG_INFO(g_logger) << "get param from query";
             total_chunks = request->getParamAs<int>("total_chunks", 0);
             chunk_index = request->getParamAs<int>("chunk_index", -1);
         }
-        // FIBER_LOG_INFO(g_logger) << "username: " << username << " md5: " << md5 << " size: " << size << " type: " << type << " filename: " << filename << " total_chunks: " << total_chunks << " chunk_index: " << chunk_index;
         // X-Chunk-Meta 用来补齐 artifact_name/version/build_no/branch/commit_id 等制品元数据。
-        // 娑旂喎鐨剧拠鏇氱矤閼奉亜鐣炬稊?header 閼惧嘲褰囬敍鍫熸付閸欘垶娼惃鍕煙瀵骏绱?
         std::string meta_header = request->getHeader("X-Chunk-Meta");
         if (!meta_header.empty()) {
             FIBER_LOG_INFO(g_logger) << "get param from header";
@@ -117,7 +98,7 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
         }
 
         if(username.empty() || md5.empty() || size <= 0 || chunk_index < 0 || type.empty() || total_chunks <= 0) {
-            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/username, checksum/md5, size, chunk_index, artifact_type/type, total_chunks required\"}", OtherError));
+            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name, checksum, size, chunk_index, artifact_type, total_chunks required\"}", OtherError));
             return -1;
         }
         request_meta.owner = username;
@@ -168,9 +149,6 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
             }
         }
 
-        // FIBER_LOG_INFO(g_logger) << "chunk upload: user=" << username << " md5=" << md5
-        //                          << " chunk=" << chunk_index+1 << "/" << total_chunks;
-
         bool saved = false;
         PerfTimer file_io_timer;
         if(!file_path.empty()) {
@@ -191,9 +169,7 @@ int32_t ChunkUploadServlet::handle(http::HttpRequest::ptr request
             return 0;
         }
         perf.addFileIoMs(ready_timer.elapsedMs());
-        // FIBER_LOG_INFO(g_logger) << "all chunks uploaded";
         // 所有分片到齐后先按编号合并本地临时文件，再上传到 FastDFS。
-        // 閹碘偓閺堝鍨庨悧鍥ф皑缂侇亷绱濋崥鍫濊嫙楠炴湹绗傛导鐘插煂 FastDFS
         PerfTimer merge_timer;
         std::string merged_path = ChunkManager::mergeChunks(username, md5, total_chunks);
         perf.addFileIoMs(merge_timer.elapsedMs());

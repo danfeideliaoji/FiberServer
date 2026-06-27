@@ -24,7 +24,7 @@ enum Md5Code {
 int32_t Md5Servlet::handle(http::HttpRequest::ptr request
                , http::HttpResponse::ptr response
                , http::HttpSession::ptr session) {
-    ScopedPerfLog perf("/api/md5");
+    ScopedPerfLog perf(request->getPath());
     response->setHeader("Content-Type", "text/json charset=utf-8");
     std::string body = request->getBody();
     try {
@@ -41,7 +41,7 @@ int32_t Md5Servlet::handle(http::HttpRequest::ptr request
         std::string filename = meta.storage_name;
 
         if (username.empty() || md5.empty()) {
-            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name/username, checksum/md5 are required\"}", OtherError));
+            response->setBody(StringUtil::Format("{\"code\":%d,\"msg\":\"project_name and checksum are required\"}", OtherError));
             return -1;
         }
         

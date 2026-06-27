@@ -11,12 +11,12 @@ class Value;
 namespace FiberServer {
 
 struct ArtifactMetadata {
-    // 普通文件接口中表示用户名；artifact 接口中表示 project_name。
+    // 业务侧统一表示 project_name，内部复用历史文件表的 owner 字段。
     std::string owner;
-    // 兼容旧 md5 字段，也是制品去重和冲突判断的核心 key。
+    // 制品去重和冲突判断的核心 key，内部复用历史 md5 字段。
     std::string checksum;
     std::string artifact_name;
-    // 兼容旧 file_info.filename，artifact 会拼成 version/build_no/name。
+    // 写入 file_info.filename 的内部存储名，artifact 会拼成 version/build_no/name。
     std::string storage_name;
     std::string type;
     std::string version;

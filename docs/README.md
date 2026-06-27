@@ -36,7 +36,7 @@
 - 制品坐标已做不可变保护：同坐标不同 checksum 会返回冲突。
 - 简化版 GMP 调度器已实现：`Processor`、本地队列、全局队列批量搬运、任务窃取。
 - `/api/status` 可输出调度器和每个 Processor 的运行统计。
-- Docker 开发环境、端到端脚本和压测脚本已补齐。
+- Docker 开发环境、端到端脚本和基础状态压测脚本已补齐。
 
 ## 常用命令
 
@@ -64,15 +64,12 @@ bash scripts/docker_run_server.sh
 bash scripts/docker_e2e.sh
 ```
 
-业务压测：
+基础状态压测：
 
 ```bash
 docker compose -f docker-compose.dev.yml run --rm --no-deps \
   -e BASE_URL=http://fiberserver-app:8080 \
-  -e DOWNLOAD_BASE_URL=http://nginx \
-  -e REQUESTS=800 \
-  -e CONCURRENCY=80 \
-  -e UPLOAD_REQUESTS=10 \
-  -e UPLOAD_CONCURRENCY=3 \
-  fiberserver-dev bash scripts/docker_bench_business.sh
+  -e REQUESTS=1000 \
+  -e CONCURRENCY=100 \
+  fiberserver-dev bash scripts/docker_bench.sh
 ```

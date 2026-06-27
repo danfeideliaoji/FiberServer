@@ -32,7 +32,7 @@ static std::map<std::string, std::string> collectParams(const HttpRequest::ptr& 
 }
 
 static ArtifactMetadata metadataFromRequest(const HttpRequest::ptr& request) {
-    // 查询接口支持 query 和 JSON body 两种传参方式，便于 curl 和旧客户端复用。
+    // 查询接口支持 query 和 JSON body 两种传参方式，便于 curl 和 CI 脚本调用。
     auto meta = ArtifactMetadata::FromParams(collectParams(request));
     if (!meta.owner.empty()) {
         return meta;

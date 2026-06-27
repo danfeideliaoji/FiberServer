@@ -29,33 +29,25 @@ static std::map<std::string, std::string> parseQuery(const std::string& query) {
 int32_t DownloadServlet::handle(http::HttpRequest::ptr request
                , http::HttpResponse::ptr response
                , http::HttpSession::ptr session) {
-    ScopedPerfLog perf("/api/download");
+    ScopedPerfLog perf(request->getPath());
     std::string s = request->getQuery();
     auto query = parseQuery(s);
     auto meta = ArtifactMetadata::FromParams(query);
-    std::string user = meta.owner;
-    std::string filename = meta.storage_name;
-    std::string download_name = meta.artifact_name.empty() ? filename : meta.artifact_name;
-    bool artifact_request = request->getPath() == "/api/artifacts/download";
+    std::string download_name = meta.artifact_name;
     PerfTimer db_timer;
     struct DbResult {
         bool ok = false;
-        std::shared_ptr<FileInfo> info;
         std::shared_ptr<ArtifactInfo> artifact;
     };
-    auto db_result = DbExecutorMgr::GetInstance()->submit([user, filename, meta, artifact_request]() {
+    auto db_result = DbExecutorMgr::GetInstance()->submit([meta]() {
         DbResult result;
         SociDB::ptr mysql = SociMgr::GetInstance()->get("file_info");
         if (!mysql) {
             return result;
         }
         result.ok = true;
-        if (artifact_request) {
-            result.artifact = artifact_info::GetArtifact(mysql, meta.owner, meta.version,
-                                                         meta.build_no, meta.artifact_name);
-        } else {
-            result.info = file_info::GetFileByUserAndFilename(mysql, user, filename);
-        }
+        result.artifact = artifact_info::GetArtifact(mysql, meta.owner, meta.version,
+                                                     meta.build_no, meta.artifact_name);
         return result;
     });
     if (!db_result.ok) {
@@ -66,11 +58,9 @@ int32_t DownloadServlet::handle(http::HttpRequest::ptr request
     }
 
     std::string file_id;
-    if (artifact_request && db_result.artifact) {
+    if (db_result.artifact) {
         file_id = db_result.artifact->file_id;
         download_name = db_result.artifact->artifact_name;
-    } else if (db_result.info) {
-        file_id = db_result.info->file_id;
     }
     perf.addDbMs(db_timer.elapsedMs());
     if (file_id.empty()) {
