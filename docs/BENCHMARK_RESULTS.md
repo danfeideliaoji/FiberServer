@@ -9,6 +9,7 @@
 - 运行方式：Docker Compose 网络内运行压测脚本
 - 压测脚本：
   - `scripts/docker_bench.sh`
+  - `scripts/docker_bench_artifact.sh`
 - 业务依赖：
   - MySQL
   - FastDFS tracker
@@ -34,6 +35,43 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
 | `/api/status` | 1000 | 100 | 1000 | 0 | 922.03 | 60.03ms | 112.72ms | 146.07ms | 208.22ms |
 
 结论：纯状态接口在 100 并发下可以稳定完成，吞吐约 900 QPS。
+
+## 制品仓库业务压测
+
+命令形态：
+
+```bash
+docker compose -f docker-compose.dev.yml run --rm --no-deps \
+  -e BASE_URL=http://fiberserver-app:8080 \
+  -e DOWNLOAD_HEADER_BASE_URL=http://fiberserver-app:8080 \
+  -e REQUESTS=1000 \
+  -e CONCURRENCY=100 \
+  -e UPLOAD_REQUESTS=10 \
+  -e UPLOAD_CONCURRENCY=3 \
+  fiberserver-dev bash scripts/docker_bench_artifact.sh
+```
+
+脚本会自动创建项目 token，预置一个测试制品，然后压测当前公开业务接口：
+
+- `GET /api/status`
+- `POST /api/artifacts/list`
+- `GET /api/artifacts/latest`
+- `GET /api/artifacts/versions`
+- `GET /api/artifacts/builds`
+- `HEAD /api/artifacts/download`
+- `POST /api/artifacts/upload/direct` 小样本直传上传
+
+参数说明：
+
+| 参数 | 默认值 | 说明 |
+| --- | ---: | --- |
+| `REQUESTS` | `200` | 每个读接口请求数 |
+| `CONCURRENCY` | `20` | 每个读接口并发数 |
+| `UPLOAD_REQUESTS` | `5` | 直传上传请求数，设为 `0` 可关闭写压测 |
+| `UPLOAD_CONCURRENCY` | `2` | 直传上传并发数 |
+| `BENCH_KEEPALIVE` | `1` | 是否复用 HTTP 连接 |
+
+制品仓库压测更贴近当前业务层，因为它不再依赖旧的登录、普通文件列表和普通下载接口。默认上传样本较小，主要用于确认写链路延迟和稳定性，不代表大文件上传极限。
 
 ## 历史业务接口压测
 

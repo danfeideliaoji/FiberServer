@@ -114,6 +114,19 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
   fiberserver-dev bash scripts/docker_bench.sh
 ```
 
+制品仓库业务压测：
+
+```bash
+docker compose -f docker-compose.dev.yml run --rm --no-deps \
+  -e BASE_URL=http://fiberserver-app:8080 \
+  -e DOWNLOAD_HEADER_BASE_URL=http://fiberserver-app:8080 \
+  -e REQUESTS=1000 \
+  -e CONCURRENCY=100 \
+  -e UPLOAD_REQUESTS=10 \
+  -e UPLOAD_CONCURRENCY=3 \
+  fiberserver-dev bash scripts/docker_bench_artifact.sh
+```
+
 服务监听：
 
 - FiberServer: `http://localhost:8080`

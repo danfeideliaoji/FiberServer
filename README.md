@@ -180,6 +180,19 @@ curl -X POST http://localhost:8080/api/artifacts/precheck \
 bash scripts/docker_bench.sh
 ```
 
+制品仓库业务压测：
+
+```bash
+bash scripts/docker_bench_artifact.sh
+```
+
+常用参数：
+
+```bash
+REQUESTS=1000 CONCURRENCY=100 UPLOAD_REQUESTS=10 UPLOAD_CONCURRENCY=3 \
+  bash scripts/docker_bench_artifact.sh
+```
+
 已有压测记录见 [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md)。
 
 ## 相关文档
