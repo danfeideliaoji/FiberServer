@@ -56,7 +56,7 @@ set(LIB_SRCS
     FiberServer/net/http/http.cpp FiberServer/net/http/http11_parser.cpp FiberServer/net/http/httpclient_parser.cpp
     FiberServer/net/http/http_parser.cpp FiberServer/net/http/http_session.cpp 
     FiberServer/net/http/servlet.cpp FiberServer/net/http/http_server.cpp
-    FiberServer/servlets/config_servlet.cpp FiberServer/servlets/status_servlet.cpp FiberServer/servlets/login_servlet.cpp FiberServer/servlets/register_servlet.cpp
+    FiberServer/servlets/status_servlet.cpp
     FiberServer/servlets/chunkupload_servlet.cpp FiberServer/servlets/dirupload_servlet.cpp FiberServer/servlets/upload_servlet.cpp
     FiberServer/servlets/myfiles_servlet.cpp FiberServer/servlets/md5_servlet.cpp FiberServer/servlets/download_servlet.cpp
     FiberServer/servlets/deletefile_servlet.cpp FiberServer/servlets/artifact_auth.cpp

@@ -18,7 +18,7 @@
 
 `file_shared` 仍作为物理文件去重表，保存 checksum 到 FastDFS `file_id` 的映射和引用计数。
 
-`file_info` 继续服务旧文件接口，保证 `/api/upload`、`/api/myfiles`、`/api/download`、`/api/deletefile` 兼容。
+`file_info` 现在只作为制品上传链路的内部文件记录表复用，不再暴露旧的普通文件公开接口。旧的 `/api/upload`、`/api/myfiles`、`/api/download`、`/api/deletefile` 等路由已经移除。
 
 `artifact_info` 保存制品仓库业务元数据：
 
@@ -57,7 +57,7 @@ Artifact API 使用新的业务字段：
 | `branch` | 构建来源分支 |
 | `commit_id` | 构建来源提交 |
 
-为兼容旧客户端，部分接口仍接受 `username`、`md5`、`filename`、`file_name`、`type` 这些旧字段，但 artifact 路由会优先写入和读取 `artifact_info`。
+Artifact API 只建议使用制品字段。实现内部仍会把部分字段映射到历史文件记录结构中，但公开路由已经收敛到 `/api/artifacts/*`，不再支持旧客户端直接访问普通文件接口。
 
 ## Artifact API
 

@@ -114,41 +114,17 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
   fiberserver-dev bash scripts/docker_bench.sh
 ```
 
-业务接口压测：
+制品仓库业务压测：
 
 ```bash
 docker compose -f docker-compose.dev.yml run --rm --no-deps \
   -e BASE_URL=http://fiberserver-app:8080 \
-  -e DOWNLOAD_BASE_URL=http://nginx \
-  -e REQUESTS=30 \
-  -e CONCURRENCY=5 \
-  -e UPLOAD_REQUESTS=5 \
-  -e UPLOAD_CONCURRENCY=2 \
-  fiberserver-dev bash scripts/docker_bench_business.sh
-```
-
-压测脚本默认使用 HTTP keep-alive，每个 worker 复用自己的连接。需要回归短连接基线时可显式关闭：
-
-```bash
-BENCH_KEEPALIVE=0 docker compose -f docker-compose.dev.yml run --rm --no-deps \
-  -e BASE_URL=http://nginx \
-  -e DOWNLOAD_BASE_URL=http://nginx \
-  -e REQUESTS=300 \
-  -e CONCURRENCY=30 \
-  fiberserver-dev bash scripts/docker_bench_business.sh
-```
-
-业务接口矩阵压测：
-
-```bash
-docker compose -f docker-compose.dev.yml run --rm --no-deps \
-  -e BASE_URL=http://fiberserver-app:8080 \
-  -e DOWNLOAD_BASE_URL=http://nginx \
-  -e REQUESTS_LIST="30 100" \
-  -e CONCURRENCY_LIST="1 5 10" \
-  -e UPLOAD_REQUESTS=5 \
-  -e UPLOAD_CONCURRENCY=2 \
-  fiberserver-dev bash scripts/docker_bench_matrix.sh
+  -e DOWNLOAD_HEADER_BASE_URL=http://fiberserver-app:8080 \
+  -e REQUESTS=1000 \
+  -e CONCURRENCY=100 \
+  -e UPLOAD_REQUESTS=10 \
+  -e UPLOAD_CONCURRENCY=3 \
+  fiberserver-dev bash scripts/docker_bench_artifact.sh
 ```
 
 服务监听：
@@ -188,7 +164,7 @@ FIBER_WORKER_THREADS=2 docker compose -f docker-compose.dev.yml up -d --build --
 性能分段日志默认开启，会输出到 `perf` logger。日志形态包括：
 
 ```text
-perf route=/api/login status=ok total_ms=1 db_ms=1 fastdfs_ms=0 file_io_ms=0
+perf route=/api/artifacts/precheck status=direct total_ms=1 db_ms=1 fastdfs_ms=0 file_io_ms=0
 perf component=soci_pool name=file_info source=idle pool_wait_ms=0 create_ms=0 total_ms=0 pool_total=1 pool_idle=0
 ```
 
@@ -249,14 +225,12 @@ use_connection_pool=true
 - `fiberserver-dev:local` 镜像构建成功。
 - 容器内 CMake 编译和 `./build/test` 通过，调度器测试输出 `gmp scheduler test passed: 200 tasks`。
 - `mysql`、`fastdfs-tracker`、`fastdfs-storage` 已能启动，MySQL healthcheck 为 healthy。
-- `fiberserver-app` 已能启动，`http://localhost:8080/api/_/config` 返回 `HTTP/1.1 200 OK`。
+- `fiberserver-app` 已能启动，`http://localhost:8080/api/status` 返回 `HTTP/1.1 200 OK`。
 - `http://localhost:8080/api/status` 返回 `HTTP/1.1 200 OK`，可查看当前调度器统计，包括每个 P 的本地队列、执行来源、全局队列批量搬运、steal 任务数、steal 批次数、steal 尝试和失败次数。
 - Nginx 已配置 `/group1/` 内部转发到 FastDFS storage，支持 `X-Accel-Redirect` 完整下载。
-- Nginx 已配置 `/api/uploadchunk` 的 `client_body_in_file_only` 落盘转发，并和 `fiberserver-app` 共享 `/var/data/tmp_uploads`。
-- 注册、重复注册、正确/错误登录、直传上传、md5 秒传检查、两用户秒传引用、分片上传、文件列表、下载响应头、删除和 Nginx 完整下载主链路已通过 `scripts/docker_e2e.sh` 覆盖。
+- Nginx 已配置 `/api/artifacts/upload/chunk` 的 `client_body_in_file_only` 落盘转发，并和 `fiberserver-app` 共享 `/var/data/tmp_uploads`。
+- 服务状态、旧公开接口 404、制品 token、直传/分片上传、列表、下载响应头、删除和 Nginx 完整下载主链路已通过 `scripts/docker_e2e.sh` 覆盖。
 - `scripts/docker_bench.sh` 已可在 Compose 网络内运行，当前小样本基线为 `/api/status` 100 请求、10 并发、全部 200、QPS 约 765、P95 约 19ms。
-- `scripts/docker_bench_business.sh` 已可在 Compose 网络内运行，当前小样本基线为 30 请求、5 并发：`status` QPS 约 789、`login` QPS 约 753、`myfiles` QPS 约 758、`download` QPS 约 539；直传上传 5 请求、2 并发 QPS 约 35，全部 0 错误。
-- `scripts/docker_bench_matrix.sh` 已可在 Compose 网络内运行，已用 `REQUESTS_LIST="10 20"`、`CONCURRENCY_LIST="1 5"` 验证多轮连续业务压测全部 0 错误。
 - `FIBER_WORKER_THREADS=2` 已验证可覆盖服务线程数，`/api/status` 显示 2 个 Processor；随后已恢复默认 5 线程运行状态。
 
 ## 注意事项

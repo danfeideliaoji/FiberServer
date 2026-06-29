@@ -6,7 +6,7 @@ namespace FiberServer {
 namespace http {
 
 static bool IsArtifactWritePath(const std::string& path) {
-    // 只保护 artifact 写接口；旧文件接口保持原有兼容行为。
+    // 旧文件公开接口已移除；这里保护所有仍保留的 artifact 写接口。
     return path == "/api/artifacts/precheck" ||
            path == "/api/artifacts/upload/direct" ||
            path == "/api/artifacts/upload/chunk" ||

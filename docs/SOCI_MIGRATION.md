@@ -11,14 +11,14 @@
 - Docker 开发镜像已安装 SOCI MySQL backend 依赖。
 - 新增 `FiberServer/db/soci_db.h` 和 `FiberServer/db/soci_db.cpp`。
 - 新增 `FiberServer/my/mysqlop_soci.cpp`，覆盖用户、文件元数据和共享文件路径。
-- `login/register` 已支持 SOCI 路径。
-- `upload/md5/myfiles/download/delete/dirupload/chunkupload` 涉及的主要文件元数据路径已支持 SOCI。
-- 旧 MySQL 版 `user_info` 管理类 helper 已补齐 SOCI 实现：`GetUserById`、`UpdatePassword`、`UpdateLastLogin`、`UpdateNickname`、`UpdateStatus`、`DeleteUser`、`GetUsersByStatus`、`GetUserCount`。
+- 旧 `login/register` 路径曾支持 SOCI，当前公开路由已移除。
+- `artifact precheck/checksum/list/download/delete/direct/chunk` 涉及的主要文件元数据路径已支持 SOCI。
+- 旧 `user_info` 管理类 helper 已随登录/注册公开接口移除。
 - `FastDFS` 里按 md5 查询元数据的便捷函数已支持 `SociDB::ptr`。
 - 已移除旧 MySQL C API 封装文件：`FiberServer/db/mysql.h`、`FiberServer/db/mysql.cpp`。
 - 已移除旧业务访问实现：`FiberServer/my/mysqlop.cpp`。
 - 已移除 `USE_SOCI_DB` CMake 开关、旧 MySQL 条件编译分支和 `MySQLThreadIniter`。
-- `scripts/docker_e2e.sh` 已扩展为服务级主链路验证脚本，覆盖重复注册、正确/错误登录、小文件直传、md5 秒传检查、两用户秒传引用、分片上传、文件列表、下载和删除。
+- `scripts/docker_e2e.sh` 已扩展为服务级主链路验证脚本，覆盖服务状态、旧公开接口 404、制品 token、直传/分片上传、列表、下载和删除。
 - `SociManager::get()` 已支持连接复用和获取超时：按 `max_conn` 或兼容现有 `connection` 配置限制每个命名池的连接数，空闲连接通过 `SociDB::ptr` deleter 自动归还。
 - SOCI 路径已给会同时修改 `file_info` 和 `file_shared` 的关键链路补事务：秒传、直传落库、分片合并后落库、删除文件记录和共享引用计数。
 
@@ -55,25 +55,12 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
 已通过，输出形态为：
 
 ```text
-e2e passed: user=... second_user=... file_id=... instant_file_id=... chunk_file_id=... chunk_mode=body
+e2e passed: project=... direct_file_id=... chunk_file_id=... chunk_mode=body
 ```
 
 旧 MySQL C API 删除后，服务级 E2E 已重新运行并通过。
 
-SOCI 业务压测：
-
-```bash
-docker compose -f docker-compose.dev.yml run --rm --no-deps \
-  -e BASE_URL=http://nginx \
-  -e DOWNLOAD_BASE_URL=http://nginx \
-  -e REQUESTS=800 \
-  -e CONCURRENCY=80 \
-  -e UPLOAD_REQUESTS=10 \
-  -e UPLOAD_CONCURRENCY=3 \
-  fiberserver-dev bash scripts/docker_bench_business.sh
-```
-
-已在 SOCI 服务实例下通过，结果：
+SOCI 业务压测历史结果如下。该结果来自旧普通文件接口仍存在时的压测，当前旧公开接口和对应脚本已删除，仅作为迁移记录保留：
 
 | 场景 | 请求数 | 并发 | 成功 | 错误 | QPS | P95 | P99 | 最大延迟 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -98,17 +85,13 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
 
 脚本覆盖：
 
-- 注册新用户。
-- 重复注册同名用户。
-- 正确密码登录。
-- 错误密码登录。
-- 小文件直传。
-- 大文件分片上传。
-- `md5` 秒传。
-- `/api/myfiles` 文件列表。
+- 服务状态检查。
+- 旧公开接口返回 404。
+- 制品 token 创建。
+- 制品预检、直传和分片上传。
+- 制品列表、latest/versions/builds 查询。
 - 下载定位是否正确。
-- 删除文件后 `file_info` 和 `file_shared.ref_count` 是否正确。
-- `ref_count = 0` 时是否删除 FastDFS 文件和 `file_shared` 记录。
+- 删除制品后 `artifact_info`、`file_info` 和 `file_shared.ref_count` 是否正确。
 
 产出：
 
@@ -123,7 +106,7 @@ docker compose -f docker-compose.dev.yml run --rm --no-deps \
 - SOCI 是同步库，当前 100 并发业务压测未观察到错误；后续仍建议补更长时间压测。
 - 当前 `SociManager` 连接池使用线程级等待，当前小/中样本未观察到连接池超时；真实生产并发下仍需要根据延迟和连接数调参。
 - SOCI 数据库事务已覆盖 `file_info` 与 `file_shared` 的关键组合写入；删除路径中 FastDFS 文件删除发生在数据库事务提交之后，后续如要强化一致性，需要补失败补偿或清理任务。
-- `filename + user` 定位文件的语义需要确认是否允许同名文件；如果允许同名，应改用 `file_id` 或记录 `id`。
+- 制品删除当前通过制品坐标定位，再清理内部 `file_info` 逻辑记录；后续如果支持同一坐标多文件，需要改用独立记录 id。
 
 ## 当前推荐顺序
 
